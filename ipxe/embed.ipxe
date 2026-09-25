@@ -1,0 +1,177 @@
+#!ipxe
+# kindling: the script compiled into this project's iPXE.
+#
+# Stock iPXE, started with no embedded script, does DHCP and then boots
+# whatever the DHCP "boot filename" says. That is the whole chainloading
+# problem: a router whose "Network Boot" option says `ipxe.efi` hands iPXE
+# itself, and it loads itself for ever. This script never follows the boot
+# filename blindly. It knows where the boot server is — baked in, or asked
+# for directly — and goes there with everything the machine knows about
+# itself, so the server's reflector round trip is skipped as well.
+#
+# The @…@ markers are filled in by ipxe/build.sh. Everything else is plain
+# iPXE script; `sw-` prefixes every variable so none of them collide with a
+# setting iPXE or a DHCP server defines.
+
+# --- baked in at build time --------------------------------------------------
+set sw-base @PXE_EMBED_BASE@
+set sw-port @PXE_EMBED_PORT@
+set sw-dhcp-tries @PXE_DHCP_TRIES@
+
+# DHCP option 77. It starts with "iPXE" so every server that looks for iPXE
+# the usual way still finds it (kindling matches it case-insensitively,
+# dnsmasq and ISC configs usually match a prefix). The suffix is how
+# kindling tells its own build from a stock one. Must be set before the
+# first `dhcp`: it is copied into the request, not into the reply.
+set user-class iPXE-kindling
+
+echo
+echo kindling iPXE ${version} (upstream @IPXE_COMMIT_SHORT@, ${platform} ${buildarch})
+isset ${sw-base} && echo   boot server: ${sw-base} ||
+isset ${sw-base} || echo   boot server: not baked in, asking DHCP for it
+echo
+
+# --- every interface in turn ---------------------------------------------------
+# Not just net0. A machine with two ports where net0 is on an office network
+# with DHCP and no boot server, and net1 is on the boot VLAN, is common. An
+# interface that gets an address but no answer from any boot server is closed
+# and the next one is tried, rather than that address being the end of it.
+set sw-idx:int32 0
+
+:interface
+isset ${net${sw-idx}/mac} || goto no-interfaces-left
+set sw-if net${sw-idx}
+set sw-try:int32 0
+
+:dhcp
+inc sw-try
+echo kindling: DHCP on ${sw-if} (${${sw-if}/mac}), attempt ${sw-try} of ${sw-dhcp-tries}
+dhcp ${sw-if} && goto configured ||
+iseq ${sw-try} ${sw-dhcp-tries} || goto dhcp
+echo kindling: no DHCP answer on ${sw-if}
+goto next-interface
+
+:configured
+echo kindling: ${sw-if} is ${${sw-if}/ip}
+clear sw-last ||
+
+# --- where is the boot server? ---------------------------------------------------
+# Tried in order, each falling through to the next on failure. A candidate is
+# only ever *fetched* here; what the server returns is executed afterwards,
+# and its outcome is final (see :run).
+
+# 1. The base URL baked into this build.
+isset ${sw-base} || goto from-proxy
+set sw-url ${sw-base}
+set sw-return from-proxy
+goto ask
+
+# 2. A proxy DHCP server's next-server: kindling's own proxy answering
+#    beside the network's real DHCP server.
+:from-proxy
+isset ${proxydhcp/next-server} || goto from-next-server
+set sw-url http://${proxydhcp/next-server}:${sw-port}
+set sw-return from-next-server
+goto ask
+
+# 3. The DHCP server's next-server (siaddr): what a router's "Network Boot"
+#    option points at, which is this server when that option is how the
+#    machine got here at all.
+:from-next-server
+isset ${${sw-if}/next-server} || goto from-filename
+iseq ${${sw-if}/next-server} 0.0.0.0 && goto from-filename ||
+set sw-url http://${${sw-if}/next-server}:${sw-port}
+set sw-return from-filename
+goto ask
+
+# 4. The boot filename — only when it is a script URL, never a loader.
+#    iPXE's script language has no prefix test, so "is this http(s)://…" is
+#    approximated two ways. The loader names any DHCP server here might hand
+#    out are refused by name. And a bare filename (`ipxe.efi`) cannot be
+#    fetched from this script at all: it has no URI to be relative to, so it
+#    fails rather than resolving against a TFTP server.
+:from-filename
+clear sw-file ||
+isset ${proxydhcp/filename} && set sw-file ${proxydhcp/filename} ||
+isset ${sw-file} && goto check-filename ||
+isset ${${sw-if}/filename} && set sw-file ${${sw-if}/filename} ||
+isset ${sw-file} || goto next-interface
+
+:check-filename
+iseq ${sw-file} undionly.kpxe && goto loader-filename ||
+iseq ${sw-file} undionly.kkpxe && goto loader-filename ||
+iseq ${sw-file} undionly.pxe && goto loader-filename ||
+iseq ${sw-file} ipxe.pxe && goto loader-filename ||
+iseq ${sw-file} ipxe.kpxe && goto loader-filename ||
+iseq ${sw-file} ipxe.lkrn && goto loader-filename ||
+iseq ${sw-file} ipxe.efi && goto loader-filename ||
+iseq ${sw-file} snponly.efi && goto loader-filename ||
+iseq ${sw-file} snp.efi && goto loader-filename ||
+iseq ${sw-file} ipxe32.efi && goto loader-filename ||
+iseq ${sw-file} ipxe-arm64.efi && goto loader-filename ||
+echo kindling: trying the DHCP boot filename ${sw-file}
+imgfetch --name sw-script ${sw-file} && goto run ||
+echo kindling: could not fetch ${sw-file}
+goto next-interface
+
+:loader-filename
+echo kindling: DHCP offered ${sw-file}, which is a boot loader, not a script. Not loading it again.
+goto next-interface
+
+# --- one candidate ---------------------------------------------------------------
+# The same query parameters the server's reflector asks for (see
+# boot_controller.rs), so the server decides on the first request instead of
+# the second. `mac` is the interface that actually got an address, not net0.
+# `loader` is ignored by servers that do not know it.
+:ask
+iseq ${sw-url} ${sw-last} && goto ${sw-return} ||
+set sw-last ${sw-url}
+echo kindling: asking ${sw-url}/boot.ipxe
+imgfetch --name sw-script ${sw-url}/boot.ipxe?mac=${${sw-if}/mac:hexhyp}&uuid=${uuid}&arch=${buildarch}&platform=${platform}&manufacturer=${manufacturer:uristring}&product=${product:uristring}&serial=${serial:uristring}&asset=${asset:uristring}&hostname=${hostname:uristring}&loader=kindling && goto run ||
+echo kindling: ${sw-url} did not answer
+goto ${sw-return}
+
+# --- a server answered -------------------------------------------------------------
+# From here the boot server has decided, and that decision is not second-
+# guessed by trying the next candidate: a profile that boots the local disk
+# ends with `exit 0`, and a machine told "no" must not go looking for a
+# server that says yes.
+:run
+imgexec --autofree sw-script && exit 0 ||
+echo
+echo kindling: the boot server's script ended without booting anything.
+goto give-up
+
+:next-interface
+ifclose ${sw-if} ||
+inc sw-idx
+goto interface
+
+# --- nothing worked -------------------------------------------------------------------
+:no-interfaces-left
+echo
+echo kindling: no boot server answered on any interface.
+isset ${sw-base} && echo   the baked-in server was ${sw-base} ||
+echo   Check that the server is running, that this machine's network reaches it,
+echo   and `pxe:doctor` on the server.
+
+:give-up
+echo
+echo Continuing the firmware's boot order. Press any key for the iPXE shell.
+prompt --timeout 1000 10... && goto shell ||
+prompt --timeout 1000 9... && goto shell ||
+prompt --timeout 1000 8... && goto shell ||
+prompt --timeout 1000 7... && goto shell ||
+prompt --timeout 1000 6... && goto shell ||
+prompt --timeout 1000 5... && goto shell ||
+prompt --timeout 1000 4... && goto shell ||
+prompt --timeout 1000 3... && goto shell ||
+prompt --timeout 1000 2... && goto shell ||
+prompt --timeout 1000 1... && goto shell ||
+exit 1
+
+:shell
+echo
+echo Type `exit` to leave iPXE and continue the firmware's boot order.
+shell
+exit 1

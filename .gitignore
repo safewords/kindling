@@ -1,0 +1,25 @@
+/target
+/node_modules
+
+/.env
+# The backups the editors keep beside the files they write.
+/.env.bak
+/pxe-rules.toml.bak
+
+/storage/*.sqlite
+/storage/*.sqlite-*
+/storage/logs/*
+!/storage/logs/.gitkeep
+
+# The built frontend, and the file the dev server writes while it runs.
+/public/build
+/public/hot
+
+# The boot loaders and images an operator drops in. They are large, they are
+# somebody else's binaries, and they are not this repository's to carry.
+/tftproot/*
+!/tftproot/.gitkeep
+!/tftproot/README.md
+
+# Per-developer IDE state.
+/.idea

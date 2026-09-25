@@ -1,0 +1,4 @@
+# The upstream checkout and its object files, when building without the
+# container. Never this repository's to carry: see UPSTREAM for why the source
+# is fetched rather than vendored.
+/.work/

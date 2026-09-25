@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark light">
+    <title>{{ title }}</title>
+
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+</head>
+<body class="h-full bg-slate-950 text-slate-200 antialiased">
+    <div id="app"
+         data-name="{{ name }}"
+         data-server="{{ server }}"
+         data-base="{{ base }}"
+         data-version="{{ version }}"></div>
+
+    <noscript>
+        <div style="padding:2rem;font:14px system-ui;color:#cbd5e1">
+            <h1>kindling</h1>
+            <p>The admin interface needs JavaScript. Everything it does is also on
+               the JSON API and in the console: <code>pxe:hosts</code>,
+               <code>pxe:rules</code>, <code>pxe:test</code>,
+               <code>pxe:doctor</code>.</p>
+        </div>
+    </noscript>
+</body>
+</html>

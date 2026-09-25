@@ -1,0 +1,59 @@
+# Build this project's iPXE for every architecture, with the same container
+# build a laptop uses (ipxe/Containerfile via ipxe/build.sh), and keep the
+# binaries as artifacts.
+#
+# What gets compiled in: nothing, unless the repository variable
+# PXE_EMBED_BASE is set or a manual run supplies one. A build with no server
+# baked in finds it through DHCP, which is the right default for a binary
+# that is not built for one particular network.
+name: iPXE
+
+on:
+  push:
+    paths:
+      - "ipxe/**"
+      - ".github/workflows/ipxe.yml"
+  pull_request:
+    paths:
+      - "ipxe/**"
+      - ".github/workflows/ipxe.yml"
+  workflow_dispatch:
+    inputs:
+      embed_base:
+        description: "Server URL to compile in (e.g. http://10.0.0.2:8080); empty finds it through DHCP"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    strategy:
+      # One architecture failing says nothing about the others, and the
+      # others' artifacts are still worth having.
+      fail-fast: false
+      matrix:
+        arch: [bios, x86_64-efi, i386-efi, arm64-efi]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        env:
+          PXE_EMBED_BASE: ${{ inputs.embed_base || vars.PXE_EMBED_BASE }}
+        run: bash ipxe/build.sh --engine=docker --arch=${{ matrix.arch }}
+
+      - name: Show what was built
+        run: |
+          cat tftproot/ipxe-build/${{ matrix.arch }}/BUILD-INFO
+          cat tftproot/ipxe-build/${{ matrix.arch }}/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipxe-${{ matrix.arch }}
+          path: tftproot/ipxe-build/${{ matrix.arch }}/
+          if-no-files-found: error

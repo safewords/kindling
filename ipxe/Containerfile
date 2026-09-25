@@ -1,0 +1,69 @@
+# The iPXE build, as a container build. Used by ipxe/build.sh, ipxe/build.ps1,
+# `pxe:ipxe --build` and CI alike, so a loader built on a laptop and one built
+# by a workflow come out of the same compiler.
+#
+#   docker build --platform linux/amd64 -f ipxe/Containerfile \
+#       --build-arg ARCHES=bios,x86_64-efi --build-arg EMBED_BASE=http://… \
+#       --output type=local,dest=tftproot/ipxe-build ipxe
+#
+# Why a build and not a `run` with the repository mounted: nothing has to be
+# shared into the engine's VM (Docker Desktop on Hyper-V refuses a path that is
+# not listed under File Sharing), nothing comes back owned by root, and it
+# works the same against a remote engine. The context is just this directory;
+# the output is just the binaries.
+
+# --- the toolchain ------------------------------------------------------------
+# Debian stable, amd64. iPXE's x86 targets (BIOS and both EFI flavours) want
+# an x86 compiler, and the arm64 target is cross-compiled from here — which is
+# the direction Debian packages a cross compiler for.
+#
+# Deliberately absent: gcc-multilib. iPXE is freestanding and needs no 32-bit
+# libc for its i386 targets, and on Debian gcc-multilib conflicts with the
+# aarch64 cross compiler, so installing it would cost the arm64 build.
+FROM docker.io/library/debian:bookworm-slim AS toolchain
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        binutils \
+        binutils-aarch64-linux-gnu \
+        binutils-dev \
+        ca-certificates \
+        gcc \
+        gcc-aarch64-linux-gnu \
+        git \
+        libc6-dev \
+        liblzma-dev \
+        make \
+        mtools \
+        perl \
+        xz-utils \
+        zlib1g-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- the build ----------------------------------------------------------------
+FROM toolchain AS build
+
+ARG ARCHES=all
+ARG EMBED_BASE=none
+ARG EMBED_PORT=8080
+ARG DHCP_TRIES=3
+ARG IPXE_MAKE_ARGS=
+
+COPY . /work/ipxe
+
+# The upstream checkout and its object files live in a cache mount, so a
+# second build (another architecture, a new embed URL) only recompiles what
+# changed instead of all of iPXE.
+RUN --mount=type=cache,id=kindling-ipxe,target=/cache \
+    IPXE_WORK=/cache IPXE_OUT=/out IPXE_MAKE_ARGS="$IPXE_MAKE_ARGS" \
+    bash /work/ipxe/build.sh --native \
+        "--arch=$ARCHES" \
+        "--embed-base=$EMBED_BASE" \
+        "--embed-port=$EMBED_PORT" \
+        "--dhcp-tries=$DHCP_TRIES"
+
+# --- what comes out -----------------------------------------------------------
+# Only the per-architecture directories: `--output type=local,dest=…` writes
+# exactly this stage's filesystem there.
+FROM scratch AS output
+COPY --from=build /out/ /

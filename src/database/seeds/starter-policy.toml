@@ -1,0 +1,234 @@
+# kindling — the starter boot policy.
+#
+# The policy lives in the database and is edited on the Policy screen of the
+# web UI. This file is what a new install is seeded with, and what
+# `pxe:rules --example` prints; it is written in the TOML form an earlier
+# release read from disk, which `pxe:rules --import` still accepts. Changing
+# it changes nothing on a server that already has a policy.
+#
+# Two things are worth knowing before reading on:
+#
+#   * `{{ … }}` is expanded by this server. `${ … }` is expanded by iPXE on
+#     the machine. They deliberately do not collide.
+#   * Rules are evaluated in priority order, highest first, and ties keep the
+#     order they are written in. The first rule to choose a profile wins;
+#     rules that only add tags carry on.
+#
+# `pxe:test --mac=… --script` answers "what would this machine boot, and why"
+# without booting anything.
+
+[settings]
+# What a machine boots when no rule chose anything.
+default_profile = "menu"
+
+# `time_between` and `weekday` are evaluated in UTC. Shift them here rather
+# than relying on the server's timezone, which is whatever its container image
+# inherited.
+# timezone_offset_minutes = -420
+
+
+# ---------------------------------------------------------------------------
+# Stage one: the binary the firmware is handed, by architecture.
+#
+# These are names inside the TFTP root (PXE_TFTP_ROOT, `tftproot` by default).
+# Download them from https://boot.ipxe.org/ — `undionly.kpxe` for BIOS,
+# `ipxe.efi` for 64-bit UEFI — or build your own.
+#
+# Leave the section out entirely and the defaults are the same names.
+# ---------------------------------------------------------------------------
+[bootloaders]
+bios = "undionly.kpxe"
+x86-uefi = "ipxe32.efi"
+x64-uefi = "ipxe.efi"
+arm64-uefi = "ipxe-arm64.efi"
+default = "ipxe.efi"
+
+
+# ---------------------------------------------------------------------------
+# Profiles: the things a machine can be sent to boot.
+# ---------------------------------------------------------------------------
+
+# The most important profile in the file. `local` stops network booting and
+# hands control back to the disk — which is what the overwhelming majority of
+# machines that PXE boot should do most of the time.
+[profiles.local]
+label = "Boot from the local disk"
+kind = "local"
+
+# `ignore` is different: the server does not answer this machine at all. For
+# hardware that has its own boot server, or that must never be touched.
+[profiles.hands-off]
+label = "Leave this machine alone"
+kind = "ignore"
+
+# A menu, for a machine somebody is standing in front of.
+[profiles.menu]
+label = "kindling netboot"
+kind = "menu"
+timeout = 30
+default = "local"
+entries = [
+    { profile = "local", key = "l" },
+    { profile = "ubuntu-2404", key = "u" },
+    { profile = "arch-r630", key = "a" },
+    { profile = "memtest", key = "m" },
+    { profile = "shell", key = "s" },
+]
+
+# A kernel, an initrd and a command line. This server writes the iPXE.
+[profiles.ubuntu-2404]
+label = "Ubuntu 24.04 — unattended install"
+description = "Wipes the disk. Do not point a rule at this without meaning it."
+kernel = "{{boot}}/images/ubuntu-24.04/vmlinuz"
+initrd = ["{{boot}}/images/ubuntu-24.04/initrd"]
+cmdline = "ip=dhcp url={{boot}}/images/ubuntu-24.04/ubuntu.iso autoinstall ds=nocloud-net;s={{base}}/seed/{{mac-hyphenless}}/ cloud-config-url=/dev/null"
+
+# The Arch ISO, netbooted: kernel and initramfs over HTTP, then the live root
+# (`airootfs.sfs`) fetched by the initramfs from `archiso_http_srv`. `script=`
+# makes the live system run the installer on tty1 — which is what makes this
+# unattended. BOOTIF pins the live system to the port that PXE booted, rather
+# than whichever of the R630's four answers DHCP first. The cow space is where
+# the installer builds ZFS for the live kernel; the default 256M is too small.
+[profiles.arch-r630]
+label = "Arch Linux on a ZFS mirror (R630) — unattended install"
+description = "WIPES both Kingston SSDs: LUKS2 + TPM2, ZFS mirror root, cephadm. Refuses to touch disks that already hold the install."
+kernel = "{{boot}}/images/archlinux/arch/boot/x86_64/vmlinuz-linux"
+initrd = ["{{boot}}/images/archlinux/arch/boot/x86_64/initramfs-linux.img"]
+cmdline = "ip=dhcp BOOTIF=01-${netX/mac:hexhyp} archisobasedir=arch archiso_http_srv={{boot}}/images/archlinux/ cow_spacesize=8G script={{boot}}/images/archlinux/install-r630.sh console=ttyS1,115200n8 console=tty0"
+
+# The same, told that wiping an existing install is intended. Never the target
+# of a rule: reach it deliberately, with `pxe:pin --mac=… --profile=arch-r630-reinstall --once`.
+[profiles.arch-r630-reinstall]
+label = "Arch Linux on a ZFS mirror (R630) — REINSTALL, wipes the existing pool"
+kernel = "{{boot}}/images/archlinux/arch/boot/x86_64/vmlinuz-linux"
+initrd = ["{{boot}}/images/archlinux/arch/boot/x86_64/initramfs-linux.img"]
+cmdline = "ip=dhcp BOOTIF=01-${netX/mac:hexhyp} archisobasedir=arch archiso_http_srv={{boot}}/images/archlinux/ cow_spacesize=8G script={{boot}}/images/archlinux/install-r630.sh reinstall=yes console=ttyS1,115200n8 console=tty0"
+
+[profiles.memtest]
+label = "Memtest86+"
+kernel = "{{boot}}/images/memtest/memtest.efi"
+
+# Verbatim iPXE, for when the generated version is not enough.
+[profiles.shell]
+label = "iPXE shell"
+script = """
+#!ipxe
+echo Dropping to a shell on {{mac}} ({{vendor}} {{product}})
+echo This server is {{server}}
+shell
+"""
+
+# A machine that should be handed something other than iPXE, and never
+# chainloaded at all. Commented out because it names files this repository
+# does not ship, and a default policy that fails `pxe:doctor` teaches the
+# wrong thing about what a failure means. Uncomment it once the files are in
+# the boot root.
+#
+# [profiles.vendor-loader]
+# label = "The vendor's own loader"
+# kind = "local"
+# bootfile = { bios = "pxelinux.0", default = "grubx64.efi" }
+
+
+# ---------------------------------------------------------------------------
+# Rules, highest priority first.
+# ---------------------------------------------------------------------------
+
+# Switches and access points PXE boot too, and none of them should ever be
+# handed an installer. Highest priority in the file, on purpose.
+[[rule]]
+name = "never-touch-network-gear"
+description = "Switches, APs and routers are left entirely alone."
+priority = 1000
+profile = "hands-off"
+when = { device_class = ["network"] }
+
+# A machine tagged `hold` is out of the rules until somebody untags it. This is
+# what `pxe:tag --mac=… --add=hold` is for, at 3am, with a machine that must
+# not be reimaged in front of you.
+[[rule]]
+name = "held-machines-boot-their-disks"
+priority = 900
+profile = "local"
+when = { tag = ["hold"] }
+
+# The R630 gets Arch on ZFS, not the generic Ubuntu below — so this outranks
+# `image-new-machines`. `product` is only known once iPXE has read SMBIOS, so
+# at the firmware stage this does not match and the machine is simply handed
+# iPXE; the decision that matters is the second `/boot.ipxe`. Like the rule it
+# overrides, it fires on a machine's first boot here only. The installer also
+# refuses to wipe disks that already hold its pool, which covers the R630's
+# other NICs: each has a MAC this server has never seen.
+[[rule]]
+name = "r630-gets-arch-on-zfs"
+description = "Dell PowerEdge R630: Arch Linux, ZFS mirror on the Kingston SSDs, TPM-unlocked LUKS, cephadm."
+priority = 200
+profile = "arch-r630"
+tag = ["provisioned", "arch-zfs", "ceph"]
+when = { product = ["PowerEdge R630*"], known = false }
+unless = { tag = ["no-install"] }
+
+# Virtual machines are cheap to rebuild and are usually a lab. Note that this
+# matches the hypervisor's OUI, not a guess.
+[[rule]]
+name = "tag-virtual-machines"
+priority = 500
+tag = ["virtual"]
+when = { device_class = ["virtual"] }
+
+# Tagging rules do not stop evaluation, so this one annotates and the rules
+# below still run.
+[[rule]]
+name = "tag-by-subnet"
+priority = 500
+tag = ["lab"]
+when = { subnet = ["10.20.0.0/16"] }
+
+# A machine that has never been given anything to boot here gets the installer
+# — once. `known` is the boot counter, not the existence of an inventory row,
+# so it stays false for the whole of a first boot rather than flipping between
+# the DHCP offer and the script. On the next boot it is known, this rule does
+# not fire, and it boots its disk.
+#
+# `unless` carves out the exception: a machine tagged `no-install` is new and
+# stays untouched.
+[[rule]]
+name = "image-new-machines"
+description = "Anything that has never booted here gets provisioned."
+priority = 100
+profile = "ubuntu-2404"
+tag = ["provisioned"]
+when = { known = false, device_class = ["physical", "virtual"] }
+unless = { tag = ["no-install"] }
+
+# Reimaging is disruptive, so the rule that does it on demand is restricted to
+# a window. Outside it, a machine tagged `reimage` waits.
+[[rule]]
+name = "reimage-overnight-only"
+priority = 90
+profile = "ubuntu-2404"
+when = { tag = ["reimage"], time_between = ["22:00", "06:00"] }
+
+# A machine that has tried and failed several times should stop trying: three
+# boots with no success is a machine that needs a person, not a fourth attempt.
+[[rule]]
+name = "stop-reimaging-after-three-tries"
+priority = 80
+profile = "menu"
+when = { tag = ["reimage"], boots_at_least = 3 }
+
+# Matching on what the machine says about itself, which only iPXE knows. The
+# glob is why `product` is useful: model numbers come with suffixes.
+[[rule]]
+name = "old-optiplexes-get-the-menu"
+priority = 50
+profile = "menu"
+when = { vendor = ["Dell"], product = ["OptiPlex 70*", "OptiPlex 30*"] }
+
+# Everything else boots its own disk. Without a rule like this, every machine
+# in the building would land on `default_profile` — which is fine for a menu
+# and wrong for anything else.
+[[rule]]
+name = "everything-else-boots-its-disk"
+priority = -100
+profile = "local"

@@ -1,0 +1,12 @@
+# The iPXE source this project builds, pinned.
+#
+# A commit rather than a branch: a boot loader is the first code every machine
+# on the network executes, and "whatever master was when CI last ran" is not
+# something to hand a rack. Moving the pin is a one-line change that shows up
+# in review, and `pxe:ipxe` prints it next to every build it reports on.
+#
+# To move it:
+#   git ls-remote https://github.com/ipxe/ipxe refs/heads/master
+# then paste the hash below and rebuild every architecture.
+repository=https://github.com/ipxe/ipxe.git
+commit=744cdb451ef28bc894df72b6b40fdf1fda04acfc

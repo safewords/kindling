@@ -1,0 +1,4 @@
+# The build context is ipxe/. A native build's upstream checkout lives in
+# .work/ and is hundreds of megabytes of object files the container fetches
+# for itself.
+.work

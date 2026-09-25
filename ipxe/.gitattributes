@@ -1,0 +1,10 @@
+# Everything here is read by a Linux toolchain inside a container, from a tree
+# that may have been checked out on Windows. A CRLF in build.sh is a script
+# that fails with `$'\r': command not found`; a CRLF in embed.ipxe is a script
+# iPXE runs with a carriage return on the end of every URL.
+*.sh          text eol=lf
+*.ipxe        text eol=lf
+*.h           text eol=lf
+*.patch       text eol=lf
+Containerfile text eol=lf
+UPSTREAM      text eol=lf

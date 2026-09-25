@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+/* Dark by default and not negotiable, because this interface is looked at in
+   a rack room at 3am far more often than it is looked at in daylight. */
+@theme {
+  --color-ink-950: oklch(0.16 0.014 258);
+  --color-ink-900: oklch(0.2 0.015 258);
+  --color-ink-800: oklch(0.25 0.016 258);
+  --color-ink-700: oklch(0.32 0.017 258);
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+/* The one thing a boot server's interface must never do is depend on a font
+   nobody can reach. Everything here is a system stack. */
+html {
+  color-scheme: dark;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* A scrollbar that does not repaint the page white in a dark room. */
+* {
+  scrollbar-color: var(--color-slate-700) transparent;
+  scrollbar-width: thin;
+}
+
+/* The editors. A textarea is the right control for a document somebody is
+   going to paste into and diff — what makes it usable is the tab key working
+   and the line height matching the gutter beside it, both of which are here
+   rather than in a 200KB editor component. */
+.doc-editor {
+  tab-size: 2;
+  line-height: 1.5rem;
+  font-variant-ligatures: none;
+}
+
+/* Keeps a long table header readable while the rows scroll under it. */
+.sticky-head th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: fade-rise 0.16s ease-out;
+}
+
+/* A row that arrived over the live feed, rather than with the page. Brief,
+   and only a background: in a log scrolling at rack speed, anything that
+   moved the text would make it unreadable. */
+@keyframes arrived {
+  from {
+    background-color: color-mix(in oklch, var(--color-sky-400) 14%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.arrived {
+  animation: arrived 1.6s ease-out;
+}

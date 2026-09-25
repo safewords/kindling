@@ -1,0 +1,63 @@
+[package]
+name = "kindling"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+description = "A network boot (PXE) server with a rule engine: which machine gets which image, and why."
+repository = "https://github.com/safewords/kindling"
+
+# The binary is the console entry point; the library is what the tests boot.
+# An integration test can only see a library target — see the framework's
+# `docs/directory-structure.md`.
+[lib]
+name = "pxe"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pxe"
+path = "src/main.rs"
+
+[dependencies]
+# The framework. `sea-orm-executor` gives the native SQLite/MySQL/Postgres
+# driver the inventory lives on.
+rainier-framework = { git = "https://github.com/safewords/rainier-framework.git", features = [
+    "sea-orm-executor",
+] }
+
+# `#[derive(Entity)]` expands to `::rainier_orm::…`, an absolute path, so the
+# crate defining a model needs the ORM as a direct dependency.
+rainier-orm = { git = "https://github.com/safewords/rainier-framework.git" }
+
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "signal",
+    "sync",
+    "time",
+    "fs",
+    "io-util",
+] }
+tracing = "0.1"
+
+# Rule conditions may use regular expressions. The same crate, and so the same
+# linear-time guarantee, whatever an operator types into the rule editor: a
+# pattern cannot be written that takes a boot request hostage.
+regex = "1"
+
+# The policy lives in the database now. TOML is still read — once, to import
+# a policy file written for an older release, and whenever an operator
+# imports one by hand — and written, for `pxe:rules --export=toml`.
+toml = "0.8"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
