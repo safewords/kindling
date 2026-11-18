@@ -65,13 +65,23 @@ impl PolicyRepository {
     pub async fn load(&self) -> Result<PolicyDocument> {
         let rules = self
             .rules
-            .matching(Criteria::new().order_by_desc("priority").order_by("position").order_by("id"))
+            .matching(
+                Criteria::new()
+                    .order_by_desc("priority")
+                    .order_by("position")
+                    .order_by("id"),
+            )
             .await?;
         let profiles = self.profiles.all().await?;
         let bootloaders = self.bootloaders.all().await?;
         let settings = self.settings.all().await?;
 
-        let setting = |key: &str| settings.iter().find(|s| s.key == key).map(|s| s.value.0.clone());
+        let setting = |key: &str| {
+            settings
+                .iter()
+                .find(|s| s.key == key)
+                .map(|s| s.value.0.clone())
+        };
 
         Ok(PolicyDocument {
             settings: Settings {
@@ -81,8 +91,14 @@ impl PolicyRepository {
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0),
             },
-            bootloaders: bootloaders.into_iter().map(|row| (row.arch, row.file)).collect(),
-            profiles: profiles.into_iter().map(|row| (row.name, row.body.0)).collect(),
+            bootloaders: bootloaders
+                .into_iter()
+                .map(|row| (row.arch, row.file))
+                .collect(),
+            profiles: profiles
+                .into_iter()
+                .map(|row| (row.name, row.body.0))
+                .collect(),
             rules: rules.iter().map(PolicyRule::to_rule).collect(),
         })
     }
@@ -98,8 +114,13 @@ impl PolicyRepository {
         let now = Utc::now();
 
         // --- profiles, before the rules that point at them ---
-        let existing: BTreeMap<String, PolicyProfile> =
-            self.profiles.all().await?.into_iter().map(|row| (row.name.clone(), row)).collect();
+        let existing: BTreeMap<String, PolicyProfile> = self
+            .profiles
+            .all()
+            .await?
+            .into_iter()
+            .map(|row| (row.name.clone(), row))
+            .collect();
         for (name, profile) in &document.profiles {
             match existing.get(name) {
                 Some(row) if row.body.0 == *profile => {}
@@ -123,8 +144,13 @@ impl PolicyRepository {
         }
 
         // --- rules ---
-        let existing: BTreeMap<String, PolicyRule> =
-            self.rules.all().await?.into_iter().map(|row| (row.name.clone(), row)).collect();
+        let existing: BTreeMap<String, PolicyRule> = self
+            .rules
+            .all()
+            .await?
+            .into_iter()
+            .map(|row| (row.name.clone(), row))
+            .collect();
         for (position, rule) in document.rules.iter().enumerate() {
             let mut wanted = PolicyRule::from_rule(rule, position as i64);
             match existing.get(&rule.name) {
@@ -140,8 +166,13 @@ impl PolicyRepository {
         }
 
         // --- boot loaders ---
-        let existing: BTreeMap<String, PolicyBootloader> =
-            self.bootloaders.all().await?.into_iter().map(|row| (row.arch.clone(), row)).collect();
+        let existing: BTreeMap<String, PolicyBootloader> = self
+            .bootloaders
+            .all()
+            .await?
+            .into_iter()
+            .map(|row| (row.arch.clone(), row))
+            .collect();
         for (arch, file) in &document.bootloaders {
             match existing.get(arch) {
                 Some(row) if row.file == *file => {}
@@ -153,7 +184,12 @@ impl PolicyRepository {
                 }
                 None => {
                     self.bootloaders
-                        .create(PolicyBootloader { id: 0, arch: arch.clone(), file: file.clone(), updated_at: now })
+                        .create(PolicyBootloader {
+                            id: 0,
+                            arch: arch.clone(),
+                            file: file.clone(),
+                            updated_at: now,
+                        })
                         .await?;
                 }
             }
@@ -170,10 +206,18 @@ impl PolicyRepository {
                     .map(serde_json::Value::String)
                     .unwrap_or(serde_json::Value::Null),
             ),
-            (TIMEZONE_OFFSET, serde_json::json!(document.settings.timezone_offset_minutes)),
+            (
+                TIMEZONE_OFFSET,
+                serde_json::json!(document.settings.timezone_offset_minutes),
+            ),
         ];
-        let existing: BTreeMap<String, PolicySetting> =
-            self.settings.all().await?.into_iter().map(|row| (row.key.clone(), row)).collect();
+        let existing: BTreeMap<String, PolicySetting> = self
+            .settings
+            .all()
+            .await?
+            .into_iter()
+            .map(|row| (row.key.clone(), row))
+            .collect();
         for (key, value) in wanted_settings {
             match existing.get(key) {
                 Some(row) if row.value.0 == value => {}
@@ -185,7 +229,12 @@ impl PolicyRepository {
                 }
                 None => {
                     self.settings
-                        .create(PolicySetting { id: 0, key: key.to_string(), value: Json(value), updated_at: now })
+                        .create(PolicySetting {
+                            id: 0,
+                            key: key.to_string(),
+                            value: Json(value),
+                            updated_at: now,
+                        })
                         .await?;
                 }
             }
@@ -242,7 +291,9 @@ impl PolicyRepository {
 
     /// The most recent versions, newest first.
     pub async fn revisions(&self, limit: u64) -> Result<Vec<PolicyRevision>> {
-        self.revisions.matching(Criteria::new().order_by_desc("id").limit(limit)).await
+        self.revisions
+            .matching(Criteria::new().order_by_desc("id").limit(limit))
+            .await
     }
 
     pub async fn revision(&self, id: u64) -> Result<Option<PolicyRevision>> {
@@ -250,13 +301,17 @@ impl PolicyRepository {
     }
 
     pub async fn latest(&self) -> Result<Option<PolicyRevision>> {
-        self.revisions.first_matching(Criteria::new().order_by_desc("id")).await
+        self.revisions
+            .first_matching(Criteria::new().order_by_desc("id"))
+            .await
     }
 
     // --- the wizard's saved starting points ---
 
     pub async fn templates(&self) -> Result<Vec<RuleTemplate>> {
-        self.templates.matching(Criteria::new().order_by("category").order_by("name")).await
+        self.templates
+            .matching(Criteria::new().order_by("category").order_by("name"))
+            .await
     }
 
     /// Save a template, replacing one of the same name.
@@ -268,7 +323,11 @@ impl PolicyRepository {
         rule: serde_json::Value,
     ) -> Result<RuleTemplate> {
         let now = Utc::now();
-        match self.templates.first_by("name", name.to_string().into()).await? {
+        match self
+            .templates
+            .first_by("name", name.to_string().into())
+            .await?
+        {
             Some(mut row) => {
                 row.description = description;
                 row.category = category.to_string();

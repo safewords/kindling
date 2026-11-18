@@ -75,7 +75,12 @@ impl Default for LoopBreaker {
 
 impl LoopBreaker {
     pub fn new(window: Duration, threshold: usize, capacity: usize) -> Self {
-        Self { window, threshold: threshold.max(2), capacity, seen: Mutex::new(HashMap::new()) }
+        Self {
+            window,
+            threshold: threshold.max(2),
+            capacity,
+            seen: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn window(&self) -> Duration {
@@ -94,7 +99,10 @@ impl LoopBreaker {
         // a machine that stopped booting an hour ago.
         let window = self.window;
         seen.retain(|_, attempts| {
-            attempts.transactions.iter().any(|(at, _)| now.duration_since(*at) < window)
+            attempts
+                .transactions
+                .iter()
+                .any(|(at, _)| now.duration_since(*at) < window)
         });
 
         if seen.len() >= self.capacity && !seen.contains_key(&mac) {
@@ -118,7 +126,9 @@ impl LoopBreaker {
             attempts.progressed = false;
         }
 
-        attempts.transactions.retain(|(at, _)| now.duration_since(*at) < window);
+        attempts
+            .transactions
+            .retain(|(at, _)| now.duration_since(*at) < window);
 
         // Retransmissions of one `DISCOVER` share an xid. Only a new
         // transaction is another lap.
@@ -129,7 +139,9 @@ impl LoopBreaker {
         if attempts.progressed || attempts.transactions.len() < self.threshold {
             LoopState::Fine
         } else {
-            LoopState::Looping { transactions: attempts.transactions.len() }
+            LoopState::Looping {
+                transactions: attempts.transactions.len(),
+            }
         }
     }
 
@@ -160,7 +172,9 @@ impl LoopBreaker {
         // machines for ever after. The data behind it is a diagnostic cache,
         // so recovering it is safe in a way that recovering a half-written
         // invariant would not be.
-        self.seen.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.seen
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -240,7 +254,12 @@ mod tests {
         let start = Instant::now();
 
         for lap in 0..3 {
-            breaker.offer(machine, "ipxe.efi", lap, start + Duration::from_secs(lap as u64 * 5));
+            breaker.offer(
+                machine,
+                "ipxe.efi",
+                lap,
+                start + Duration::from_secs(lap as u64 * 5),
+            );
         }
         breaker.progressed(machine);
 
@@ -260,7 +279,12 @@ mod tests {
         let start = Instant::now();
 
         for lap in 0..3 {
-            breaker.offer(machine, "ipxe.efi", lap, start + Duration::from_secs(lap as u64 * 5));
+            breaker.offer(
+                machine,
+                "ipxe.efi",
+                lap,
+                start + Duration::from_secs(lap as u64 * 5),
+            );
         }
 
         assert_eq!(
@@ -296,7 +320,12 @@ mod tests {
         breaker.offer(mac("18:66:da:11:22:33"), "ipxe.efi", 1, start);
         assert_eq!(breaker.tracked(), 1);
 
-        breaker.offer(mac("52:54:00:11:22:33"), "ipxe.efi", 1, start + Duration::from_secs(600));
+        breaker.offer(
+            mac("52:54:00:11:22:33"),
+            "ipxe.efi",
+            1,
+            start + Duration::from_secs(600),
+        );
         assert_eq!(breaker.tracked(), 1, "the first machine aged out");
     }
 
@@ -332,7 +361,12 @@ mod tests {
         let start = Instant::now();
 
         for lap in 0..4 {
-            breaker.offer(machine, "ipxe.efi", lap, start + Duration::from_secs(lap as u64));
+            breaker.offer(
+                machine,
+                "ipxe.efi",
+                lap,
+                start + Duration::from_secs(lap as u64),
+            );
         }
         breaker.forget(machine);
 

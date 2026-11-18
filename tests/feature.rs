@@ -32,7 +32,9 @@ impl Server {
             let _booting = BOOTING.lock().unwrap_or_else(|e| e.into_inner());
             boot(Mode::Testing).await.expect("the server should boot")
         };
-        Self { app: TestApp::new(app).expect("a kernel") }
+        Self {
+            app: TestApp::new(app).expect("a kernel"),
+        }
     }
 
     fn hosts(&self) -> Arc<HostRepository> {
@@ -40,7 +42,9 @@ impl Server {
     }
 
     fn events(&self) -> Arc<BootEventRepository> {
-        self.app.resolve::<BootEventRepository>().expect("the boot log")
+        self.app
+            .resolve::<BootEventRepository>()
+            .expect("the boot log")
     }
 
     fn service(&self) -> Arc<BootService> {
@@ -78,7 +82,10 @@ async fn a_machine_with_no_query_is_sent_back_to_ask_again_properly() {
     let server = Server::boot().await;
 
     let response = server.app.get("/boot.ipxe").await;
-    response.assert_ok().assert_contains("#!ipxe").assert_contains("chain ");
+    response
+        .assert_ok()
+        .assert_contains("#!ipxe")
+        .assert_contains("chain ");
 
     assert!(
         response.text().contains("${net0/mac:hexhyp}"),
@@ -105,8 +112,17 @@ async fn a_machine_is_recorded_the_first_time_it_asks_and_not_declared_in_advanc
         .await
         .assert_ok();
 
-    let host = server.hosts().by_mac(mac(address)).await.unwrap().expect("recorded");
-    assert_eq!(host.vendor.as_deref(), Some("Dell"), "identified from the OUI, not the query");
+    let host = server
+        .hosts()
+        .by_mac(mac(address))
+        .await
+        .unwrap()
+        .expect("recorded");
+    assert_eq!(
+        host.vendor.as_deref(),
+        Some("Dell"),
+        "identified from the OUI, not the query"
+    );
     assert_eq!(host.product.as_deref(), Some("OptiPlex 7090"));
     assert_eq!(host.arch, "x64-uefi");
     assert_eq!(host.boot_count, 1);
@@ -132,7 +148,12 @@ async fn a_machine_is_new_exactly_once() {
         "a machine that has booted here before is not a new machine"
     );
 
-    let host = server.hosts().by_mac(mac(address)).await.unwrap().expect("recorded");
+    let host = server
+        .hosts()
+        .by_mac(mac(address))
+        .await
+        .unwrap()
+        .expect("recorded");
     assert_eq!(host.boot_count, 2);
 }
 
@@ -141,13 +162,23 @@ async fn every_stage_of_a_boot_leaves_a_line_in_the_log() {
     let server = Server::boot().await;
     let address = "18:66:da:44:55:66";
 
-    server.app.get(&server.boot_url(address, "")).await.assert_ok();
+    server
+        .app
+        .get(&server.boot_url(address, ""))
+        .await
+        .assert_ok();
 
     let events = server.events().for_mac(mac(address), 10).await.unwrap();
     assert!(!events.is_empty(), "serving a script is an event");
 
-    let script = events.iter().find(|event| event.kind == "script").expect("a script event");
-    assert!(script.profile.is_some(), "and it records what the machine was sent");
+    let script = events
+        .iter()
+        .find(|event| event.kind == "script")
+        .expect("a script event");
+    assert!(
+        script.profile.is_some(),
+        "and it records what the machine was sent"
+    );
     assert!(script.rule.is_some(), "and which rule decided");
 }
 
@@ -157,9 +188,23 @@ async fn a_profile_can_be_fetched_by_name_and_an_unknown_one_is_a_404() {
     // has to resolve to the same profile as the bare name.
     let server = Server::boot().await;
 
-    server.app.get("/profiles/local").await.assert_ok().assert_contains("#!ipxe");
-    server.app.get("/profiles/local.ipxe").await.assert_ok().assert_contains("#!ipxe");
-    server.app.get("/profiles/no-such-profile.ipxe").await.assert_not_found();
+    server
+        .app
+        .get("/profiles/local")
+        .await
+        .assert_ok()
+        .assert_contains("#!ipxe");
+    server
+        .app
+        .get("/profiles/local.ipxe")
+        .await
+        .assert_ok()
+        .assert_contains("#!ipxe");
+    server
+        .app
+        .get("/profiles/no-such-profile.ipxe")
+        .await
+        .assert_not_found();
 }
 
 #[tokio::test]
@@ -167,11 +212,18 @@ async fn writing_endpoints_are_closed_when_no_token_is_configured() {
     // Not open. This server decides what a fleet executes at power-on.
     let server = Server::boot().await;
     let address = "18:66:da:77:88:99";
-    server.app.get(&server.boot_url(address, "")).await.assert_ok();
+    server
+        .app
+        .get(&server.boot_url(address, ""))
+        .await
+        .assert_ok();
 
     server
         .app
-        .post(&format!("/api/hosts/{address}/pin"), &serde_json::json!({ "profile": "local" }))
+        .post(
+            &format!("/api/hosts/{address}/pin"),
+            &serde_json::json!({ "profile": "local" }),
+        )
         .await
         .assert_status(StatusCode::SERVICE_UNAVAILABLE);
 
@@ -183,7 +235,11 @@ async fn writing_endpoints_are_closed_when_no_token_is_configured() {
 
     // Reading is unaffected.
     server.app.get("/api/hosts").await.assert_ok();
-    server.app.get(&format!("/api/hosts/{address}")).await.assert_ok();
+    server
+        .app
+        .get(&format!("/api/hosts/{address}"))
+        .await
+        .assert_ok();
 }
 
 #[tokio::test]
@@ -192,13 +248,25 @@ async fn a_pin_overrides_the_rules_and_a_one_shot_overrides_the_pin() {
     // closed without a token and what is under test is the precedence.
     let server = Server::boot().await;
     let address = "18:66:da:ab:cd:ef";
-    server.app.get(&server.boot_url(address, "")).await.assert_ok();
+    server
+        .app
+        .get(&server.boot_url(address, ""))
+        .await
+        .assert_ok();
 
-    server.hosts().pin(mac(address), Some("memtest")).await.unwrap();
+    server
+        .hosts()
+        .pin(mac(address), Some("memtest"))
+        .await
+        .unwrap();
     let pinned = server.app.get(&server.boot_url(address, "")).await;
     pinned.assert_ok().assert_contains("memtest");
 
-    server.hosts().set_once(mac(address), Some("shell")).await.unwrap();
+    server
+        .hosts()
+        .set_once(mac(address), Some("shell"))
+        .await
+        .unwrap();
     let once = server.app.get(&server.boot_url(address, "")).await;
     once.assert_ok().assert_contains("shell");
 
@@ -207,7 +275,12 @@ async fn a_pin_overrides_the_rules_and_a_one_shot_overrides_the_pin() {
     assert_eq!(host.once_profile, None, "the one-shot was used up");
     assert_eq!(host.pinned_profile.as_deref(), Some("memtest"));
 
-    server.app.get(&server.boot_url(address, "")).await.assert_ok().assert_contains("memtest");
+    server
+        .app
+        .get(&server.boot_url(address, ""))
+        .await
+        .assert_ok()
+        .assert_contains("memtest");
 }
 
 #[tokio::test]
@@ -240,7 +313,10 @@ async fn the_rule_tester_explains_itself_and_changes_nothing() {
 
     let response = server
         .app
-        .post("/api/rules/test", &serde_json::json!({ "mac": address, "arch": "bios" }))
+        .post(
+            "/api/rules/test",
+            &serde_json::json!({ "mac": address, "arch": "bios" }),
+        )
         .await;
 
     response
@@ -248,7 +324,10 @@ async fn the_rule_tester_explains_itself_and_changes_nothing() {
         .assert_json_path("decision.profile", "hands-off")
         .assert_json_path("facts.device_class", "network");
 
-    let trace = response.json()["trace"].as_array().cloned().unwrap_or_default();
+    let trace = response.json()["trace"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     assert!(!trace.is_empty(), "the trace is the point of the endpoint");
 
     // A dry run must not invent a machine.
@@ -290,17 +369,24 @@ async fn the_firmware_stage_chainloads_ipxe_and_the_ipxe_stage_does_not() {
     )
     .identified(service.ouis());
 
-    let first =
-        pxe::pxe::dhcp::proxy::BootPolicy::firmware_answer(&*service, firmware.clone())
-            .await
-            .expect("a physical machine is answered");
-    assert!(first.file.ends_with(".efi"), "the loader, over TFTP: {}", first.file);
+    let first = pxe::pxe::dhcp::proxy::BootPolicy::firmware_answer(&*service, firmware.clone())
+        .await
+        .expect("a physical machine is answered");
+    assert!(
+        first.file.ends_with(".efi"),
+        "the loader, over TFTP: {}",
+        first.file
+    );
 
     let already_running = firmware.with_user_class(Some("iPXE".into()));
     let second = pxe::pxe::dhcp::proxy::BootPolicy::firmware_answer(&*service, already_running)
         .await
         .expect("answered");
-    assert!(second.file.ends_with("/boot.ipxe"), "the script, over HTTP: {}", second.file);
+    assert!(
+        second.file.ends_with("/boot.ipxe"),
+        "the script, over HTTP: {}",
+        second.file
+    );
 }
 
 #[tokio::test]
@@ -312,7 +398,14 @@ async fn every_admin_screen_is_served_the_same_shell() {
     // it should 404 rather than get HTML.
     let server = Server::boot().await;
 
-    for path in ["/", "/devices", "/devices/18:66:da:11:22:33", "/policy", "/config", "/events"] {
+    for path in [
+        "/",
+        "/devices",
+        "/devices/18:66:da:11:22:33",
+        "/policy",
+        "/config",
+        "/events",
+    ] {
         let response = server.app.get(path).await;
         response.assert_ok();
         assert!(
@@ -335,7 +428,10 @@ async fn the_shell_carries_the_built_bundle_and_the_server_facts() {
     response.assert_ok();
 
     let body = response.text();
-    assert!(body.contains("/build/assets/"), "the bundle should be linked: {body}");
+    assert!(
+        body.contains("/build/assets/"),
+        "the bundle should be linked: {body}"
+    );
 
     // Handed over in the document so the first screen renders without a round
     // trip to find out what this server calls itself.
@@ -350,7 +446,11 @@ async fn a_file_under_the_boot_root_is_served_and_a_path_outside_it_is_not() {
     // The root ships a README, which is a real file to ask for.
     server.app.get("/boot/README.md").await.assert_ok();
 
-    for attempt in ["/boot/../Cargo.toml", "/boot/../../etc/passwd", "/boot/.env"] {
+    for attempt in [
+        "/boot/../Cargo.toml",
+        "/boot/../../etc/passwd",
+        "/boot/.env",
+    ] {
         let response = server.app.get(attempt).await;
         assert_ne!(
             response.status(),
@@ -404,7 +504,10 @@ async fn a_machine_chainloading_in_a_circle_is_given_the_script_it_was_trying_to
     let events = server.events().for_mac(address, 10).await.unwrap();
     assert!(
         events.iter().any(|event| {
-            event.detail.as_deref().is_some_and(|detail| detail.contains("looping"))
+            event
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("looping"))
         }),
         "the recovery should be visible in `pxe:log`: {events:#?}"
     );
@@ -432,7 +535,11 @@ async fn retransmitting_one_request_is_never_mistaken_for_a_loop() {
         let answer = pxe::pxe::dhcp::proxy::BootPolicy::firmware_answer(&*service, facts)
             .await
             .expect("answered");
-        assert!(answer.file.ends_with(".efi"), "still the loader: {}", answer.file);
+        assert!(
+            answer.file.ends_with(".efi"),
+            "still the loader: {}",
+            answer.file
+        );
     }
 }
 
@@ -525,9 +632,13 @@ async fn editable() -> Server {
         let _booting = BOOTING.lock().unwrap_or_else(|e| e.into_inner());
         let mut env = pxe::environment(Mode::Testing);
         env.set("PXE_API_TOKEN", TEST_TOKEN);
-        pxe::boot_with(Mode::Testing, env.isolated()).await.expect("the server should boot")
+        pxe::boot_with(Mode::Testing, env.isolated())
+            .await
+            .expect("the server should boot")
     };
-    Server { app: TestApp::new(app).expect("a kernel") }
+    Server {
+        app: TestApp::new(app).expect("a kernel"),
+    }
 }
 
 const TEST_TOKEN: &str = "test-token";
@@ -539,11 +650,17 @@ async fn write(
     path: &str,
     body: Option<serde_json::Value>,
 ) -> rainier_framework::testing::TestResponse {
-    let mut request = server.app.request(method, path).header("x-pxe-token", TEST_TOKEN);
+    let mut request = server
+        .app
+        .request(method, path)
+        .header("x-pxe-token", TEST_TOKEN);
     if let Some(body) = body {
         request = request.json(&body);
     }
-    request.build().pipe(|request| server.app.send(request)).await
+    request
+        .build()
+        .pipe(|request| server.app.send(request))
+        .await
 }
 
 async fn policy(server: &Server) -> serde_json::Value {
@@ -558,15 +675,27 @@ async fn the_policy_comes_from_the_database_rule_by_rule() {
     let body = policy(&server).await;
 
     assert_eq!(body["source"], "database");
-    assert!(body["revision"].as_u64().is_some(), "the seeded starter is revision one: {body}");
+    assert!(
+        body["revision"].as_u64().is_some(),
+        "the seeded starter is revision one: {body}"
+    );
     let rules = body["rules"].as_array().unwrap();
     assert!(!rules.is_empty(), "the starter policy was seeded");
     assert!(!body["profiles"].as_array().unwrap().is_empty());
 
     // Each rule carries its condition tree and the same thing in words.
-    let network = rules.iter().find(|r| r["name"] == "never-touch-network-gear").unwrap();
+    let network = rules
+        .iter()
+        .find(|r| r["name"] == "never-touch-network-gear")
+        .unwrap();
     assert!(network["when"]["all"].is_array(), "{network}");
-    assert!(network["described"]["when"].as_str().unwrap().contains("device_class"), "{network}");
+    assert!(
+        network["described"]["when"]
+            .as_str()
+            .unwrap()
+            .contains("device_class"),
+        "{network}"
+    );
 }
 
 #[tokio::test]
@@ -578,7 +707,11 @@ async fn the_schema_describes_every_fact_an_editor_can_offer() {
     let product = facts.iter().find(|f| f["name"] == "product").unwrap();
     assert_eq!(product["type"], "text");
     assert_eq!(product["known_at"], "ipxe");
-    assert!(product["operators"].as_array().unwrap().iter().any(|o| o == "regex"));
+    assert!(product["operators"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|o| o == "regex"));
     assert!(schema["operators"]["in_subnet"]["label"].is_string());
     assert!(schema["profile_kinds"].as_array().unwrap().len() >= 5);
 }
@@ -600,7 +733,14 @@ async fn a_rule_can_be_added_changed_toggled_and_removed_and_each_is_a_revision(
         "tag": ["storage"],
         "set": { "role": "storage" }
     });
-    write(&server, Method::POST, "/api/policy/rules", Some(rule.clone())).await.assert_ok();
+    write(
+        &server,
+        Method::POST,
+        "/api/policy/rules",
+        Some(rule.clone()),
+    )
+    .await
+    .assert_ok();
 
     let body = policy(&server).await;
     let stored = body["rules"]
@@ -616,9 +756,14 @@ async fn a_rule_can_be_added_changed_toggled_and_removed_and_each_is_a_revision(
     // Replacing it may rename it.
     let mut renamed = rule.clone();
     renamed["name"] = "r7xx-get-arch".into();
-    write(&server, Method::PUT, "/api/policy/rules/storage-nodes-get-arch", Some(renamed))
-        .await
-        .assert_ok();
+    write(
+        &server,
+        Method::PUT,
+        "/api/policy/rules/storage-nodes-get-arch",
+        Some(renamed),
+    )
+    .await
+    .assert_ok();
     // A patch changes only what it names; `null` clears.
     write(
         &server,
@@ -638,14 +783,29 @@ async fn a_rule_can_be_added_changed_toggled_and_removed_and_each_is_a_revision(
     .assert_ok();
 
     let body = policy(&server).await;
-    let stored =
-        body["rules"].as_array().unwrap().iter().find(|r| r["name"] == "r7xx-get-arch").unwrap().clone();
+    let stored = body["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "r7xx-get-arch")
+        .unwrap()
+        .clone();
     assert_eq!(stored["priority"], 5);
     assert_eq!(stored["enabled"], false);
     assert!(stored["set"].as_object().unwrap().is_empty(), "{stored}");
-    assert_eq!(stored["profile"], "arch-r630", "the patch left the rest alone");
+    assert_eq!(
+        stored["profile"], "arch-r630",
+        "the patch left the rest alone"
+    );
 
-    write(&server, Method::DELETE, "/api/policy/rules/r7xx-get-arch", None).await.assert_ok();
+    write(
+        &server,
+        Method::DELETE,
+        "/api/policy/rules/r7xx-get-arch",
+        None,
+    )
+    .await
+    .assert_ok();
     assert!(!policy(&server).await["rules"]
         .as_array()
         .unwrap()
@@ -653,8 +813,12 @@ async fn a_rule_can_be_added_changed_toggled_and_removed_and_each_is_a_revision(
         .any(|r| r["name"] == "r7xx-get-arch"));
 
     let history = server.app.get("/api/policy/revisions").await.json();
-    let summaries: Vec<&str> =
-        history["data"].as_array().unwrap().iter().map(|r| r["summary"].as_str().unwrap()).collect();
+    let summaries: Vec<&str> = history["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["summary"].as_str().unwrap())
+        .collect();
     assert!(summaries[0].contains("removed"), "{summaries:?}");
     assert_eq!(summaries.len() as u64, start + 5, "{summaries:?}");
 }
@@ -673,7 +837,11 @@ async fn a_change_that_would_not_load_is_refused_and_the_running_policy_is_untou
     )
     .await;
     refused.assert_status(StatusCode::BAD_REQUEST);
-    assert!(refused.text().contains("no-such-profile"), "{}", refused.text());
+    assert!(
+        refused.text().contains("no-such-profile"),
+        "{}",
+        refused.text()
+    );
 
     let refused = write(
         &server,
@@ -684,7 +852,11 @@ async fn a_change_that_would_not_load_is_refused_and_the_running_policy_is_untou
     )
     .await;
     refused.assert_status(StatusCode::BAD_REQUEST);
-    assert!(refused.text().contains("regular expression"), "{}", refused.text());
+    assert!(
+        refused.text().contains("regular expression"),
+        "{}",
+        refused.text()
+    );
 
     // A profile still in use cannot be deleted.
     write(&server, Method::DELETE, "/api/policy/profiles/local", None)
@@ -715,7 +887,10 @@ async fn a_write_made_against_an_old_revision_is_refused() {
 
     server
         .app
-        .request(Method::POST, "/api/policy/rules/never-touch-network-gear/enabled")
+        .request(
+            Method::POST,
+            "/api/policy/rules/never-touch-network-gear/enabled",
+        )
         .header("x-pxe-token", TEST_TOKEN)
         .header("x-policy-revision", &seen.to_string())
         .json(&serde_json::json!({ "enabled": true }))
@@ -732,14 +907,29 @@ async fn an_earlier_revision_can_be_restored() {
     let original = policy(&server).await;
     let first = original["revision"].as_u64().unwrap();
 
-    write(&server, Method::DELETE, "/api/policy/rules/tag-by-subnet", None).await.assert_ok();
+    write(
+        &server,
+        Method::DELETE,
+        "/api/policy/rules/tag-by-subnet",
+        None,
+    )
+    .await
+    .assert_ok();
     assert_ne!(policy(&server).await["document"], original["document"]);
 
-    write(&server, Method::POST, &format!("/api/policy/revisions/{first}/restore"), None)
-        .await
-        .assert_ok();
+    write(
+        &server,
+        Method::POST,
+        &format!("/api/policy/revisions/{first}/restore"),
+        None,
+    )
+    .await
+    .assert_ok();
     let restored = policy(&server).await;
-    assert_eq!(restored["document"], original["document"], "the policy is as it was");
+    assert_eq!(
+        restored["document"], original["document"],
+        "the policy is as it was"
+    );
     assert!(
         restored["revision"].as_u64().unwrap() > first,
         "and the rollback is itself a revision"
@@ -751,13 +941,24 @@ async fn renaming_a_profile_carries_every_reference_with_it() {
     use rainier_framework::http::Method;
     let server = editable().await;
     let body = policy(&server).await;
-    let local = body["profiles"].as_array().unwrap().iter().find(|p| p["name"] == "local").unwrap()
-        ["body"]
+    let local = body["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == "local")
+        .unwrap()["body"]
         .clone();
 
     let mut renamed = local.clone();
     renamed["rename_to"] = "disk".into();
-    write(&server, Method::PUT, "/api/policy/profiles/local", Some(renamed)).await.assert_ok();
+    write(
+        &server,
+        Method::PUT,
+        "/api/policy/profiles/local",
+        Some(renamed),
+    )
+    .await
+    .assert_ok();
 
     let document = policy(&server).await["document"].clone();
     assert!(document["profiles"]["disk"].is_object());
@@ -774,7 +975,11 @@ async fn a_preview_says_which_known_machines_a_rule_would_change() {
     let server = editable().await;
     // A machine the inventory knows.
     let address = "18:66:da:77:88:99";
-    server.app.get(&server.boot_url(address, "&product=OptiPlex%207090")).await.assert_ok();
+    server
+        .app
+        .get(&server.boot_url(address, "&product=OptiPlex%207090"))
+        .await
+        .assert_ok();
 
     let preview = server
         .app
@@ -862,9 +1067,14 @@ async fn the_wizard_can_save_and_forget_its_own_templates() {
     .await
     .assert_status(StatusCode::BAD_REQUEST);
 
-    write(&server, Method::DELETE, &format!("/api/policy/templates/{id}"), None)
-        .await
-        .assert_status(StatusCode::NO_CONTENT);
+    write(
+        &server,
+        Method::DELETE,
+        &format!("/api/policy/templates/{id}"),
+        None,
+    )
+    .await
+    .assert_status(StatusCode::NO_CONTENT);
 }
 
 #[tokio::test]
@@ -879,9 +1089,13 @@ async fn the_policy_exports_as_a_document_that_imports_back() {
     toml.assert_ok();
 
     // Importing what was exported changes nothing, so records no revision.
-    let response =
-        write(&server, Method::PUT, "/api/policy", Some(serde_json::json!({ "text": toml.text() })))
-            .await;
+    let response = write(
+        &server,
+        Method::PUT,
+        "/api/policy",
+        Some(serde_json::json!({ "text": toml.text() })),
+    )
+    .await;
     response.assert_ok();
     assert_eq!(response.json()["changed"], false, "{}", response.text());
     assert_eq!(policy(&server).await["document"], document);
@@ -904,7 +1118,10 @@ async fn validating_a_document_changes_nothing_and_needs_no_token() {
 
     let bad = server
         .app
-        .post("/api/policy/validate", &serde_json::json!({ "text": "[[rule]]\nname = \"r\"\nprofile = \"gone\"\n" }))
+        .post(
+            "/api/policy/validate",
+            &serde_json::json!({ "text": "[[rule]]\nname = \"r\"\nprofile = \"gone\"\n" }),
+        )
         .await;
     bad.assert_ok().assert_json_path("ok", false);
     assert!(bad.text().contains("gone"), "{}", bad.text());
@@ -929,7 +1146,10 @@ async fn the_configuration_endpoint_documents_every_setting_and_hides_the_secret
     }
 
     // A token in the file is never echoed back in full.
-    let token = settings.iter().find(|s| s["key"] == "PXE_API_TOKEN").expect("the token setting");
+    let token = settings
+        .iter()
+        .find(|s| s["key"] == "PXE_API_TOKEN")
+        .expect("the token setting");
     assert_eq!(token["kind"], "secret");
 }
 
@@ -959,7 +1179,11 @@ async fn editing_the_configuration_needs_the_token_and_refuses_a_setting_nobody_
         .await;
 
     refused.assert_status(StatusCode::BAD_REQUEST);
-    assert!(refused.text().contains("PXE_SREVER_IP"), "{}", refused.text());
+    assert!(
+        refused.text().contains("PXE_SREVER_IP"),
+        "{}",
+        refused.text()
+    );
 }
 
 /// A tiny helper so the request builder reads left to right.
@@ -989,7 +1213,11 @@ async fn the_live_feed_is_served_on_the_http_port() {
         .app
         .resolve::<rainier_framework::websocket::WebSocketRoutes>()
         .expect("socket routes are bound");
-    assert!(sockets.match_path("/ws/live").is_some(), "{:?}", sockets.patterns());
+    assert!(
+        sockets.match_path("/ws/live").is_some(),
+        "{:?}",
+        sockets.patterns()
+    );
 }
 
 #[tokio::test]
@@ -997,37 +1225,64 @@ async fn a_boot_is_announced_as_it_is_recorded() {
     // The feed is fed from the repositories, so a machine arriving over HTTP
     // is announced without the boot controller knowing a browser exists.
     let server = Server::boot().await;
-    let live = server.app.resolve::<pxe::app::services::LiveFeed>().expect("the feed");
+    let live = server
+        .app
+        .resolve::<pxe::app::services::LiveFeed>()
+        .expect("the feed");
     let mut watcher = live.subscribe();
     let address = "18:66:da:77:88:99";
 
-    server.app.get(&server.boot_url(address, "&product=OptiPlex%207090")).await.assert_ok();
+    server
+        .app
+        .get(&server.boot_url(address, "&product=OptiPlex%207090"))
+        .await
+        .assert_ok();
 
     let heard = drain(&mut watcher);
     let hosts: Vec<_> = heard.iter().filter(|m| m["type"] == "host").collect();
     let events: Vec<_> = heard.iter().filter(|m| m["type"] == "event").collect();
 
-    assert!(!hosts.is_empty(), "the new machine was announced: {heard:?}");
+    assert!(
+        !hosts.is_empty(),
+        "the new machine was announced: {heard:?}"
+    );
     assert_eq!(hosts.last().unwrap()["data"]["mac"], address);
-    assert_eq!(hosts.last().unwrap()["data"]["boot_count"], 1, "the last word is the counted boot");
+    assert_eq!(
+        hosts.last().unwrap()["data"]["boot_count"],
+        1,
+        "the last word is the counted boot"
+    );
 
     assert_eq!(events.len(), 1, "one script, one row: {heard:?}");
     assert_eq!(events[0]["data"]["kind"], "script");
-    assert!(events[0]["data"]["id"].is_number(), "with the id the database gave it");
+    assert!(
+        events[0]["data"]["id"].is_number(),
+        "with the id the database gave it"
+    );
 }
 
 #[tokio::test]
 async fn an_operator_s_change_is_announced_and_the_token_never_is() {
     let server = editable().await;
-    let live = server.app.resolve::<pxe::app::services::LiveFeed>().expect("the feed");
+    let live = server
+        .app
+        .resolve::<pxe::app::services::LiveFeed>()
+        .expect("the feed");
     let address = "18:66:da:12:34:56";
-    server.app.get(&server.boot_url(address, "")).await.assert_ok();
+    server
+        .app
+        .get(&server.boot_url(address, ""))
+        .await
+        .assert_ok();
 
     let mut watcher = live.subscribe();
 
     server
         .app
-        .request(rainier_framework::http::Method::POST, &format!("/api/hosts/{address}/pin"))
+        .request(
+            rainier_framework::http::Method::POST,
+            &format!("/api/hosts/{address}/pin"),
+        )
         .header("x-pxe-token", TEST_TOKEN)
         .json(&serde_json::json!({ "profile": "memtest" }))
         .build()
@@ -1037,7 +1292,10 @@ async fn an_operator_s_change_is_announced_and_the_token_never_is() {
 
     server
         .app
-        .request(rainier_framework::http::Method::DELETE, &format!("/api/hosts/{address}"))
+        .request(
+            rainier_framework::http::Method::DELETE,
+            &format!("/api/hosts/{address}"),
+        )
         .header("x-pxe-token", TEST_TOKEN)
         .build()
         .pipe(|request| server.app.send(request))
@@ -1055,11 +1313,17 @@ async fn an_operator_s_change_is_announced_and_the_token_never_is() {
     let heard = drain(&mut watcher);
     let kinds: Vec<&str> = heard.iter().map(|m| m["type"].as_str().unwrap()).collect();
     assert_eq!(kinds, ["host", "host.forgotten", "policy"], "{heard:?}");
-    assert_eq!(heard[0]["data"]["pinned_profile"], "memtest", "the row as it now is");
+    assert_eq!(
+        heard[0]["data"]["pinned_profile"], "memtest",
+        "the row as it now is"
+    );
     assert_eq!(heard[2]["data"]["reloaded"], true);
 
     // Watching needs no token, so nothing announced may contain one.
     for message in &heard {
-        assert!(!message.to_string().contains(TEST_TOKEN), "the token leaked: {message}");
+        assert!(
+            !message.to_string().contains(TEST_TOKEN),
+            "the token leaked: {message}"
+        );
     }
 }

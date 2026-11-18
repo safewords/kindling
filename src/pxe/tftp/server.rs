@@ -24,7 +24,9 @@ use super::packet::{self, ErrorCode, Packet, ReadRequest, DEFAULT_BLOCK_SIZE};
 /// How a transfer ended, for the boot log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReadOutcome {
-    Served { bytes: u64 },
+    Served {
+        bytes: u64,
+    },
     NotFound,
     /// The path pointed outside the root, or the mode was not `octet`.
     Denied(&'static str),
@@ -82,7 +84,11 @@ pub struct TftpServer {
 
 impl TftpServer {
     pub fn new(root: impl Into<PathBuf>, events: Arc<dyn TftpEvents>) -> Self {
-        Self { root: root.into(), events, limits: Limits::default() }
+        Self {
+            root: root.into(),
+            events,
+            limits: Limits::default(),
+        }
     }
 
     #[must_use = "this returns a configured server rather than configuring in place"]
@@ -113,7 +119,10 @@ impl TftpServer {
             )
         })?;
 
-        Ok(Bound { server: Arc::new(self), socket })
+        Ok(Bound {
+            server: Arc::new(self),
+            socket,
+        })
     }
 
     /// Bind and serve until the process stops.
@@ -127,7 +136,11 @@ impl TftpServer {
             Ok(Packet::Write { filename }) => {
                 tracing::warn!(%peer, filename, "refused a TFTP write: this server is read-only");
                 self.events
-                    .read(filename, peer, ReadOutcome::Denied("this TFTP server is read-only"))
+                    .read(
+                        filename,
+                        peer,
+                        ReadOutcome::Denied("this TFTP server is read-only"),
+                    )
                     .await;
                 let _ = reply_error(
                     peer,
@@ -153,31 +166,51 @@ impl TftpServer {
             // `netascii` would line-ending-convert a kernel image into
             // something that does not boot, silently. Refusing is kinder.
             self.events
-                .read(filename, peer, ReadOutcome::Denied("only `octet` mode is served"))
+                .read(
+                    filename,
+                    peer,
+                    ReadOutcome::Denied("only `octet` mode is served"),
+                )
                 .await;
-            let _ = reply_error(peer, ErrorCode::IllegalOperation, "only `octet` mode is served")
-                .await;
+            let _ = reply_error(
+                peer,
+                ErrorCode::IllegalOperation,
+                "only `octet` mode is served",
+            )
+            .await;
             return;
         }
 
         let Some(path) = resolve(&self.root, &filename) else {
             tracing::warn!(%peer, filename, "refused a TFTP path that left the root");
             self.events
-                .read(filename, peer, ReadOutcome::Denied("that path is outside the TFTP root"))
+                .read(
+                    filename,
+                    peer,
+                    ReadOutcome::Denied("that path is outside the TFTP root"),
+                )
                 .await;
-            let _ =
-                reply_error(peer, ErrorCode::AccessViolation, "that path is outside the root").await;
+            let _ = reply_error(
+                peer,
+                ErrorCode::AccessViolation,
+                "that path is outside the root",
+            )
+            .await;
             return;
         };
 
         match self.transfer(&path, &request, peer).await {
             Ok(bytes) => {
                 tracing::info!(%peer, filename, bytes, "served over TFTP");
-                self.events.read(filename, peer, ReadOutcome::Served { bytes }).await;
+                self.events
+                    .read(filename, peer, ReadOutcome::Served { bytes })
+                    .await;
             }
             Err(TransferError::NotFound) => {
                 tracing::info!(%peer, filename, path = %path.display(), "TFTP file not found");
-                self.events.read(filename.clone(), peer, ReadOutcome::NotFound).await;
+                self.events
+                    .read(filename.clone(), peer, ReadOutcome::NotFound)
+                    .await;
                 let _ = reply_error(
                     peer,
                     ErrorCode::FileNotFound,
@@ -187,7 +220,9 @@ impl TftpServer {
             }
             Err(TransferError::Io(e)) => {
                 tracing::warn!(%peer, filename, error = %e, "TFTP transfer failed");
-                self.events.read(filename, peer, ReadOutcome::Failed(e.to_string())).await;
+                self.events
+                    .read(filename, peer, ReadOutcome::Failed(e.to_string()))
+                    .await;
             }
             Err(TransferError::Timeout) => {
                 tracing::info!(%peer, filename, "TFTP transfer timed out");
@@ -197,7 +232,9 @@ impl TftpServer {
             }
             Err(TransferError::Aborted(why)) => {
                 tracing::info!(%peer, filename, why, "TFTP transfer abandoned");
-                self.events.read(filename, peer, ReadOutcome::Failed(why)).await;
+                self.events
+                    .read(filename, peer, ReadOutcome::Failed(why))
+                    .await;
             }
         }
     }
@@ -222,13 +259,18 @@ impl TftpServer {
         // RFC 1350: the transfer moves to a fresh port immediately. Connecting
         // it means a packet from anywhere else is dropped by the kernel rather
         // than mistaken for the client's.
-        let socket = UdpSocket::bind(bind_any(peer)).await.map_err(TransferError::Io)?;
+        let socket = UdpSocket::bind(bind_any(peer))
+            .await
+            .map_err(TransferError::Io)?;
         socket.connect(peer).await.map_err(TransferError::Io)?;
 
         let (granted, block_size, window_size, timeout) = self.negotiate(request, size);
 
         if !granted.is_empty() {
-            socket.send(&packet::oack(&granted)).await.map_err(TransferError::Io)?;
+            socket
+                .send(&packet::oack(&granted))
+                .await
+                .map_err(TransferError::Io)?;
             // The client acknowledges an OACK with block 0, and only then does
             // the data start. Sending block 1 first would be a server that
             // negotiated and then ignored the answer.
@@ -248,8 +290,9 @@ impl TftpServer {
 
         while base < total_blocks {
             while sent < total_blocks && sent - base < window_size as u64 {
-                let payload =
-                    read_block(&mut file, sent, block_size, &mut buffer).await.map_err(TransferError::Io)?;
+                let payload = read_block(&mut file, sent, block_size, &mut buffer)
+                    .await
+                    .map_err(TransferError::Io)?;
                 socket
                     .send(&packet::data(block_number(sent), payload))
                     .await
@@ -316,8 +359,7 @@ impl TftpServer {
 
         let block_size = match request.option_u64("blksize") {
             Some(asked) => {
-                let granted_size =
-                    (asked.clamp(8, self.limits.max_block_size as u64)) as u16;
+                let granted_size = (asked.clamp(8, self.limits.max_block_size as u64)) as u16;
                 granted.insert("blksize".to_string(), granted_size.to_string());
                 granted_size
             }
@@ -496,7 +538,7 @@ pub fn resolve(root: &Path, filename: &str) -> Option<PathBuf> {
         match component {
             Component::Normal(part) => {
                 let part = part.to_str()?;
-                if part.starts_with('.') {
+                if part.starts_with('.') || is_drive_letter(part) {
                     return None;
                 }
                 safe.push(part);
@@ -516,6 +558,15 @@ pub fn resolve(root: &Path, filename: &str) -> Option<PathBuf> {
     Some(root.join(safe))
 }
 
+/// `C:` or `C:file`. Windows parses it as a drive prefix, which the match
+/// above refuses; everywhere else it is an ordinary component, so the same
+/// name is refused on every platform rather than meaning a different file
+/// depending on where the server runs.
+fn is_drive_letter(part: &str) -> bool {
+    let bytes = part.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,7 +576,11 @@ mod tests {
         let root = Path::new("/srv/tftp");
         assert_eq!(
             resolve(root, "ipxe/undionly.kpxe"),
-            Some(PathBuf::from("/srv/tftp").join("ipxe").join("undionly.kpxe"))
+            Some(
+                PathBuf::from("/srv/tftp")
+                    .join("ipxe")
+                    .join("undionly.kpxe")
+            )
         );
     }
 
@@ -544,7 +599,11 @@ mod tests {
             "ipxe/.ssh/id_rsa",
             "",
         ] {
-            assert_eq!(resolve(root, attempt), None, "`{attempt}` should be refused");
+            assert_eq!(
+                resolve(root, attempt),
+                None,
+                "`{attempt}` should be refused"
+            );
         }
     }
 
@@ -556,7 +615,10 @@ mod tests {
         // escape afterwards, which the traversal test above covers.
         let root = Path::new("/srv/tftp");
         assert_eq!(resolve(root, "/ipxe.efi"), Some(root.join("ipxe.efi")));
-        assert_eq!(resolve(root, "/etc/shadow"), Some(root.join("etc").join("shadow")));
+        assert_eq!(
+            resolve(root, "/etc/shadow"),
+            Some(root.join("etc").join("shadow"))
+        );
     }
 
     #[test]
@@ -564,7 +626,10 @@ mod tests {
         // On Windows, `C:file` is a path relative to the current directory of
         // drive C — which is not under the root, and `join` would not make it
         // so.
-        assert_eq!(resolve(Path::new("/srv/tftp"), "C:/windows/system32/config/sam"), None);
+        assert_eq!(
+            resolve(Path::new("/srv/tftp"), "C:/windows/system32/config/sam"),
+            None
+        );
     }
 
     #[test]
@@ -583,7 +648,11 @@ mod tests {
         // what resolves it.
         assert_eq!(acknowledged_index(1, 0, 4), Some(0));
         assert_eq!(acknowledged_index(4, 0, 4), Some(3));
-        assert_eq!(acknowledged_index(9, 0, 4), None, "outside the window: a duplicate");
+        assert_eq!(
+            acknowledged_index(9, 0, 4),
+            None,
+            "outside the window: a duplicate"
+        );
 
         // Across the wrap.
         assert_eq!(acknowledged_index(0, 65534, 65538), Some(65535));
@@ -597,7 +666,11 @@ mod tests {
         let blocks = |size: u64, block: u64| size / block + 1;
         assert_eq!(blocks(0, 512), 1, "an empty file is one empty block");
         assert_eq!(blocks(100, 512), 1);
-        assert_eq!(blocks(512, 512), 2, "the second one is empty and ends the transfer");
+        assert_eq!(
+            blocks(512, 512),
+            2,
+            "the second one is empty and ends the transfer"
+        );
         assert_eq!(blocks(1024, 512), 3);
         assert_eq!(blocks(513, 512), 2);
     }

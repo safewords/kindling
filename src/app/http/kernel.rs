@@ -47,11 +47,9 @@ pub fn api() -> MiddlewareStack {
 
 /// Anything that changes what a machine will boot.
 pub fn guarded() -> MiddlewareStack {
-    api().with_stack(
-        MiddlewareStack::new().resolved(|settings: Arc<Config>| {
-            RequireToken::new(settings.get_or(PXE_API_TOKEN, String::new()))
-        }),
-    )
+    api().with_stack(MiddlewareStack::new().resolved(|settings: Arc<Config>| {
+        RequireToken::new(settings.get_or(PXE_API_TOKEN, String::new()))
+    }))
 }
 
 #[cfg(test)]

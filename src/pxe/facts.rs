@@ -190,7 +190,9 @@ impl ClientFacts {
         if self.stage == Stage::Ipxe || self.ipxe_options {
             return true;
         }
-        self.user_class.as_deref().is_some_and(|class| class.to_lowercase().contains("ipxe"))
+        self.user_class
+            .as_deref()
+            .is_some_and(|class| class.to_lowercase().contains("ipxe"))
     }
 
     /// Whose iPXE this is, when it is iPXE.
@@ -207,7 +209,9 @@ impl ClientFacts {
         match self.user_class.as_deref() {
             Some(class)
                 if class.trim().eq_ignore_ascii_case(OWN_IPXE_USER_CLASS)
-                    || class.trim().eq_ignore_ascii_case(LEGACY_OWN_IPXE_USER_CLASS) =>
+                    || class
+                        .trim()
+                        .eq_ignore_ascii_case(LEGACY_OWN_IPXE_USER_CLASS) =>
             {
                 IpxeBuild::Own
             }
@@ -341,7 +345,11 @@ mod tests {
     use super::*;
 
     fn facts() -> ClientFacts {
-        ClientFacts::new("18:66:da:11:22:33".parse().unwrap(), ClientArch::X64_UEFI, Stage::Firmware)
+        ClientFacts::new(
+            "18:66:da:11:22:33".parse().unwrap(),
+            ClientArch::X64_UEFI,
+            Stage::Firmware,
+        )
     }
 
     #[test]
@@ -358,7 +366,12 @@ mod tests {
             ClientArch::X64_UEFI,
             Stage::Ipxe,
         )
-        .with_smbios(Some("Framework".into()), Some("Laptop 13".into()), None, None)
+        .with_smbios(
+            Some("Framework".into()),
+            Some("Laptop 13".into()),
+            None,
+            None,
+        )
         .identified(&OuiDatabase::new());
 
         assert_eq!(unknown.vendor.as_deref(), Some("Framework"));
@@ -420,7 +433,10 @@ mod tests {
         assert_eq!(stock.ipxe_build(), IpxeBuild::Unidentified);
 
         // Option 175 alone says iPXE, and says nothing about whose.
-        assert_eq!(facts().with_ipxe_options(true).ipxe_build(), IpxeBuild::Unidentified);
+        assert_eq!(
+            facts().with_ipxe_options(true).ipxe_build(),
+            IpxeBuild::Unidentified
+        );
 
         // Something that merely contains our suffix is not our build.
         let lookalike = facts().with_user_class(Some("iPXE-kindling-fork".into()));
@@ -442,12 +458,15 @@ mod tests {
 
     #[test]
     fn http_boot_is_read_from_the_architecture_or_the_vendor_class() {
-        assert!(ClientFacts::new(MacAddr::ZERO, ClientArch::X64_UEFI_HTTP, Stage::Firmware)
-            .is_http_boot());
+        assert!(
+            ClientFacts::new(MacAddr::ZERO, ClientArch::X64_UEFI_HTTP, Stage::Firmware)
+                .is_http_boot()
+        );
 
         // Some firmware sends a TFTP architecture and an HTTPClient vendor
         // class. It still wants a URL.
-        assert!(facts().with_vendor_class(Some("HTTPClient:Arch:00016:UNDI:003001".into()))
+        assert!(facts()
+            .with_vendor_class(Some("HTTPClient:Arch:00016:UNDI:003001".into()))
             .is_http_boot());
 
         assert!(!facts().is_http_boot());
@@ -460,10 +479,16 @@ mod tests {
         let relayed = facts()
             .with_client_ip(Some("0.0.0.0".parse().unwrap()))
             .with_relay_ip(Some(Ipv4Addr::new(10, 20, 0, 1)));
-        assert_eq!(relayed.network_address(), Some("10.20.0.1".parse().unwrap()));
+        assert_eq!(
+            relayed.network_address(),
+            Some("10.20.0.1".parse().unwrap())
+        );
 
         let direct = facts().with_client_ip(Some("192.168.1.50".parse().unwrap()));
-        assert_eq!(direct.network_address(), Some("192.168.1.50".parse().unwrap()));
+        assert_eq!(
+            direct.network_address(),
+            Some("192.168.1.50".parse().unwrap())
+        );
     }
 
     #[test]

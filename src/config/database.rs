@@ -22,7 +22,10 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
 
     let path = env.string("DB_DATABASE", "storage/pxe.sqlite");
     config.set(DATABASE_URL, format!("sqlite://{path}?mode=rwc"))?;
-    config.set(DATABASES, Databases::new("primary").with("primary", DatabaseConfig::sqlite(path)))?;
+    config.set(
+        DATABASES,
+        Databases::new("primary").with("primary", DatabaseConfig::sqlite(path)),
+    )?;
     Ok(())
 }
 
@@ -38,13 +41,20 @@ mod tests {
         configure(&config, &Env::parse("").isolated()).unwrap();
         let url = config.get(DATABASE_URL).unwrap();
         assert!(url.starts_with("sqlite://storage/pxe.sqlite"), "{url}");
-        assert!(url.contains("mode=rwc"), "it has to be able to create the file: {url}");
+        assert!(
+            url.contains("mode=rwc"),
+            "it has to be able to create the file: {url}"
+        );
     }
 
     #[test]
     fn a_database_url_wins_and_is_checked_before_the_server_starts() {
         let config = Config::new();
-        configure(&config, &Env::parse("DATABASE_URL=sqlite::memory:").isolated()).unwrap();
+        configure(
+            &config,
+            &Env::parse("DATABASE_URL=sqlite::memory:").isolated(),
+        )
+        .unwrap();
         assert_eq!(config.get(DATABASE_URL).as_deref(), Some("sqlite::memory:"));
     }
 }

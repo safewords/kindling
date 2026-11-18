@@ -6,4 +6,6 @@ pub mod policy;
 
 pub use boot_event::{BootEvent, EventKind};
 pub use host::Host;
-pub use policy::{PolicyBootloader, PolicyProfile, PolicyRevision, PolicyRule, PolicySetting, RuleTemplate};
+pub use policy::{
+    PolicyBootloader, PolicyProfile, PolicyRevision, PolicyRule, PolicySetting, RuleTemplate,
+};

@@ -24,8 +24,11 @@ struct Served {
 
 impl Served {
     async fn start(name: &str) -> Self {
-        let root = std::env::temp_dir()
-            .join(format!("kindling-tftp-{}-{name}-{}", std::process::id(), nanos()));
+        let root = std::env::temp_dir().join(format!(
+            "kindling-tftp-{}-{name}-{}",
+            std::process::id(),
+            nanos()
+        ));
         std::fs::create_dir_all(&root).expect("a directory to serve");
 
         let bound = TftpServer::new(&root, Arc::new(NoEvents))
@@ -54,8 +57,13 @@ impl Served {
         filename: &str,
         options: &[(&str, &str)],
     ) -> Result<(Vec<u8>, BTreeMap<String, String>), (u16, String)> {
-        let client = UdpSocket::bind("127.0.0.1:0").await.expect("a client socket");
-        client.send_to(&read_request(filename, options), self.address).await.expect("sent");
+        let client = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("a client socket");
+        client
+            .send_to(&read_request(filename, options), self.address)
+            .await
+            .expect("sent");
 
         let mut buffer = vec![0u8; 4096];
         let mut received = Vec::new();
@@ -98,7 +106,10 @@ impl Served {
                     in_window += 1;
 
                     if last || in_window >= window {
-                        client.send_to(&packet::ack(block), from).await.expect("sent");
+                        client
+                            .send_to(&packet::ack(block), from)
+                            .await
+                            .expect("sent");
                         in_window = 0;
                     }
 
@@ -156,7 +167,10 @@ async fn a_small_file_arrives_intact() {
 
     let (received, agreed) = served.fetch("undionly.kpxe", &[]).await.expect("served");
     assert_eq!(received, bytes);
-    assert!(agreed.is_empty(), "nothing was asked for, so nothing was negotiated");
+    assert!(
+        agreed.is_empty(),
+        "nothing was asked for, so nothing was negotiated"
+    );
 }
 
 #[tokio::test]
@@ -179,13 +193,11 @@ async fn a_file_that_is_an_exact_multiple_of_the_block_size_still_terminates() {
     let bytes = payload(512 * 3);
     served.write("exact.bin", &bytes);
 
-    let (received, _) = tokio::time::timeout(
-        Duration::from_secs(10),
-        served.fetch("exact.bin", &[]),
-    )
-    .await
-    .expect("the transfer ended rather than hanging")
-    .expect("served");
+    let (received, _) =
+        tokio::time::timeout(Duration::from_secs(10), served.fetch("exact.bin", &[]))
+            .await
+            .expect("the transfer ended rather than hanging")
+            .expect("served");
 
     assert_eq!(received, bytes);
 }
@@ -207,8 +219,10 @@ async fn a_negotiated_block_size_is_honoured_exactly() {
     let bytes = payload(1024 * 2 + 1);
     served.write("big.bin", &bytes);
 
-    let (received, agreed) =
-        served.fetch("big.bin", &[("blksize", "1024")]).await.expect("served");
+    let (received, agreed) = served
+        .fetch("big.bin", &[("blksize", "1024")])
+        .await
+        .expect("served");
 
     assert_eq!(agreed.get("blksize").map(String::as_str), Some("1024"));
     assert_eq!(received, bytes);
@@ -222,8 +236,10 @@ async fn a_block_size_past_what_fits_on_the_wire_is_granted_at_a_size_that_does(
     let bytes = payload(5000);
     served.write("big.bin", &bytes);
 
-    let (received, agreed) =
-        served.fetch("big.bin", &[("blksize", "65464")]).await.expect("served");
+    let (received, agreed) = served
+        .fetch("big.bin", &[("blksize", "65464")])
+        .await
+        .expect("served");
 
     assert_eq!(agreed.get("blksize").map(String::as_str), Some("1468"));
     assert_eq!(received, bytes);
@@ -236,7 +252,10 @@ async fn the_size_is_reported_before_the_transfer_starts() {
     let bytes = payload(4242);
     served.write("sized.bin", &bytes);
 
-    let (received, agreed) = served.fetch("sized.bin", &[("tsize", "0")]).await.expect("served");
+    let (received, agreed) = served
+        .fetch("sized.bin", &[("tsize", "0")])
+        .await
+        .expect("served");
 
     assert_eq!(agreed.get("tsize").map(String::as_str), Some("4242"));
     assert_eq!(received.len(), 4242);
@@ -256,7 +275,10 @@ async fn a_window_of_blocks_is_sent_before_an_acknowledgement_is_waited_for() {
         .expect("served");
 
     assert_eq!(agreed.get("windowsize").map(String::as_str), Some("8"));
-    assert_eq!(received, bytes, "windowing must not reorder or drop anything");
+    assert_eq!(
+        received, bytes,
+        "windowing must not reorder or drop anything"
+    );
 }
 
 #[tokio::test]
@@ -275,13 +297,20 @@ async fn a_path_that_leaves_the_root_is_refused() {
     let served = Served::start("traversal").await;
     served.write("inside.bin", b"fine");
 
-    for attempt in ["../../../etc/passwd", "..\\..\\windows\\system32\\config\\sam", ".env"] {
+    for attempt in [
+        "../../../etc/passwd",
+        "..\\..\\windows\\system32\\config\\sam",
+        ".env",
+    ] {
         let (code, _) = served.fetch(attempt, &[]).await.expect_err("refused");
         assert_eq!(code, 2, "`{attempt}` should be an access violation");
     }
 
     // And the directory itself still serves what is in it.
-    assert_eq!(served.fetch("inside.bin", &[]).await.expect("served").0, b"fine");
+    assert_eq!(
+        served.fetch("inside.bin", &[]).await.expect("served").0,
+        b"fine"
+    );
 }
 
 #[tokio::test]
@@ -316,7 +345,11 @@ async fn a_subdirectory_is_reachable_however_the_firmware_spells_the_path() {
     let served = Served::start("spelling").await;
     served.write("ipxe/undionly.kpxe", b"loader");
 
-    for spelling in ["ipxe/undionly.kpxe", "/ipxe/undionly.kpxe", "\\ipxe\\undionly.kpxe"] {
+    for spelling in [
+        "ipxe/undionly.kpxe",
+        "/ipxe/undionly.kpxe",
+        "\\ipxe\\undionly.kpxe",
+    ] {
         let (received, _) = served.fetch(spelling, &[]).await.expect("served");
         assert_eq!(received, b"loader", "{spelling}");
     }

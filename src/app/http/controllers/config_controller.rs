@@ -110,12 +110,19 @@ pub async fn patch(request: Req) -> Result<Response> {
         return Err(Error::bad_request(format!(
             "this server reads no setting called {}. A name it does not know would sit in the \
              file doing nothing.",
-            unknown.iter().map(|k| format!("`{k}`")).collect::<Vec<_>>().join(", ")
+            unknown
+                .iter()
+                .map(|k| format!("`{k}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
         )));
     }
 
-    let changes: Vec<(String, Option<String>)> =
-        body.changes.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
+    let changes: Vec<(String, Option<String>)> = body
+        .changes
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
 
     let file = env_file();
     file.apply(&changes).map_err(unprocessable)?;
@@ -134,7 +141,9 @@ pub async fn patch(request: Req) -> Result<Response> {
 /// settings is the token.
 fn saved(changed: &[String]) -> Response {
     if let Ok(live) = resolve::<LiveFeed>() {
-        live.publish(|| LiveUpdate::Config { changed: changed.to_vec() });
+        live.publish(|| LiveUpdate::Config {
+            changed: changed.to_vec(),
+        });
     }
 
     Response::json(&serde_json::json!({

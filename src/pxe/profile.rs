@@ -158,7 +158,9 @@ impl Profile {
                     ));
                 }
                 if self.script.is_none() && self.script_file.is_none() {
-                    problems.push(format!("profile `{name}` is a script profile with no script"));
+                    problems.push(format!(
+                        "profile `{name}` is a script profile with no script"
+                    ));
                 }
             }
             ProfileKind::Menu => {
@@ -222,10 +224,11 @@ impl RenderContext<'_> {
             // A variable no rule set expands to nothing rather than refusing
             // the script: a profile reached from a menu, or by a pin, was not
             // chosen by the rule that sets it, and should still boot.
-            other => match other.strip_prefix("var.") {
-                Some(key) => self.vars.get(key.trim()).cloned().unwrap_or_default(),
-                None => return None,
-            },
+            other => self
+                .vars
+                .get(other.strip_prefix("var.")?.trim())
+                .cloned()
+                .unwrap_or_default(),
         })
     }
 }
@@ -321,10 +324,9 @@ pub fn render(
         )),
         ProfileKind::Kernel => render_kernel(name, profile, context),
         ProfileKind::Script => {
-            let script = profile
-                .script
-                .as_deref()
-                .ok_or_else(|| RenderError::Incomplete(format!("profile `{name}` has no script")))?;
+            let script = profile.script.as_deref().ok_or_else(|| {
+                RenderError::Incomplete(format!("profile `{name}` has no script"))
+            })?;
             let expanded = expand(script, context)?;
             Ok(with_shebang(&expanded))
         }
@@ -338,13 +340,9 @@ fn render_local(profile: &Profile, context: &RenderContext<'_>) -> String {
     // there is no equivalent — `exit 0` returns to the firmware, which
     // continues down its own boot order, and that is the correct move there.
     if context.facts.arch.is_uefi() {
-        format!(
-            "#!ipxe\necho Continuing the firmware boot order ({label})\nexit 0\n"
-        )
+        format!("#!ipxe\necho Continuing the firmware boot order ({label})\nexit 0\n")
     } else {
-        format!(
-            "#!ipxe\necho Booting {label}\nsanboot --no-describe --drive 0x80 || exit 0\n"
-        )
+        format!("#!ipxe\necho Booting {label}\nsanboot --no-describe --drive 0x80 || exit 0\n")
     }
 }
 
@@ -389,7 +387,9 @@ fn render_menu(
     context: &RenderContext<'_>,
 ) -> Result<String, RenderError> {
     if profile.entries.is_empty() {
-        return Err(RenderError::Incomplete(format!("profile `{name}` is a menu with no entries")));
+        return Err(RenderError::Incomplete(format!(
+            "profile `{name}` is a menu with no entries"
+        )));
     }
 
     let mut script = String::from("#!ipxe\n");
@@ -400,11 +400,12 @@ fn render_menu(
             .profiles
             .get(&entry.profile)
             .ok_or_else(|| RenderError::UnknownProfile(entry.profile.clone()))?;
-        let label = entry.label.clone().unwrap_or_else(|| target.label_or(&entry.profile));
+        let label = entry
+            .label
+            .clone()
+            .unwrap_or_else(|| target.label_or(&entry.profile));
         match &entry.key {
-            Some(key) => {
-                script.push_str(&format!("item --key {key} {} {label}\n", entry.profile))
-            }
+            Some(key) => script.push_str(&format!("item --key {key} {} {label}\n", entry.profile)),
             None => script.push_str(&format!("item {} {label}\n", entry.profile)),
         }
     }
@@ -426,7 +427,10 @@ fn render_menu(
     // `|| goto cancelled` catches both the escape key and a timeout with no
     // default, neither of which should leave the machine at a prompt.
     script.push_str(" selected || goto cancelled\n");
-    script.push_str(&format!("chain {}/profiles/${{selected}}.ipxe\n", context.base));
+    script.push_str(&format!(
+        "chain {}/profiles/${{selected}}.ipxe\n",
+        context.base
+    ));
     script.push_str(":cancelled\n");
     script.push_str(&format!("chain {}/profiles/{default}.ipxe\n", context.base));
     Ok(script)
@@ -482,9 +486,15 @@ mod tests {
         let profiles = BTreeMap::new();
         let context = context(&facts, &profiles);
 
-        let rendered =
-            expand("kernel {{base}}/vmlinuz mac=${net0/mac} host={{hostname}}", &context).unwrap();
-        assert_eq!(rendered, "kernel http://10.0.0.2:8080/vmlinuz mac=${net0/mac} host=lab-01");
+        let rendered = expand(
+            "kernel {{base}}/vmlinuz mac=${net0/mac} host={{hostname}}",
+            &context,
+        )
+        .unwrap();
+        assert_eq!(
+            rendered,
+            "kernel http://10.0.0.2:8080/vmlinuz mac=${net0/mac} host=lab-01"
+        );
     }
 
     #[test]
@@ -493,7 +503,10 @@ mod tests {
         let profiles = BTreeMap::new();
         let error = expand("{{ nonsense }}", &context(&facts, &profiles)).unwrap_err();
         assert_eq!(error, RenderError::UnknownPlaceholder("nonsense".into()));
-        assert!(error.to_string().contains("server"), "the message lists what is available");
+        assert!(
+            error.to_string().contains("server"),
+            "the message lists what is available"
+        );
     }
 
     #[test]
@@ -509,7 +522,10 @@ mod tests {
         // There is no `sanboot` equivalent under UEFI; `exit 0` is what hands
         // back to the firmware's own boot order.
         let profiles = BTreeMap::new();
-        let profile = Profile { kind: Some(ProfileKind::Local), ..Default::default() };
+        let profile = Profile {
+            kind: Some(ProfileKind::Local),
+            ..Default::default()
+        };
 
         let bios = facts(ClientArch::BIOS);
         let script = render("local", &profile, &context(&bios, &profiles)).unwrap();
@@ -536,7 +552,8 @@ mod tests {
 
         let script = render("ubuntu", &profile, &context(&facts, &profiles)).unwrap();
         assert!(script.starts_with("#!ipxe\n"));
-        assert!(script.contains("kernel http://10.0.0.2:8080/images/ubuntu/vmlinuz autoinstall ip=dhcp"));
+        assert!(script
+            .contains("kernel http://10.0.0.2:8080/images/ubuntu/vmlinuz autoinstall ip=dhcp"));
         assert!(script.contains("initrd http://10.0.0.2:8080/images/ubuntu/initrd"));
         assert!(script.contains("boot || goto failed"), "{script}");
         assert!(script.contains("exit 1"), "{script}");
@@ -547,8 +564,10 @@ mod tests {
         // iPXE silently refuses a script without it.
         let profiles = BTreeMap::new();
         let facts = facts(ClientArch::BIOS);
-        let profile =
-            Profile { script: Some("echo hello\nexit 0".into()), ..Default::default() };
+        let profile = Profile {
+            script: Some("echo hello\nexit 0".into()),
+            ..Default::default()
+        };
         let script = render("hand", &profile, &context(&facts, &profiles)).unwrap();
         assert!(script.starts_with("#!ipxe\n"), "{script}");
         assert!(script.contains("echo hello"));
@@ -579,18 +598,35 @@ mod tests {
             timeout: Some(30),
             default: Some("local".into()),
             entries: vec![
-                MenuEntry { profile: "local".into(), label: None, key: Some("l".into()) },
-                MenuEntry { profile: "ubuntu".into(), label: Some("Reimage".into()), key: None },
+                MenuEntry {
+                    profile: "local".into(),
+                    label: None,
+                    key: Some("l".into()),
+                },
+                MenuEntry {
+                    profile: "ubuntu".into(),
+                    label: Some("Reimage".into()),
+                    key: None,
+                },
             ],
             ..Default::default()
         };
 
         let facts = facts(ClientArch::X64_UEFI);
         let script = render("menu", &menu, &context(&facts, &profiles)).unwrap();
-        assert!(script.contains("item --key l local Boot from disk"), "{script}");
+        assert!(
+            script.contains("item --key l local Boot from disk"),
+            "{script}"
+        );
         assert!(script.contains("item ubuntu Reimage"), "{script}");
-        assert!(script.contains("choose --default local --timeout 30000"), "{script}");
-        assert!(script.contains(":cancelled"), "a timeout must still go somewhere");
+        assert!(
+            script.contains("choose --default local --timeout 30000"),
+            "{script}"
+        );
+        assert!(
+            script.contains(":cancelled"),
+            "a timeout must still go somewhere"
+        );
     }
 
     #[test]
@@ -600,7 +636,11 @@ mod tests {
         let facts = facts(ClientArch::BIOS);
         let menu = Profile {
             kind: Some(ProfileKind::Menu),
-            entries: vec![MenuEntry { profile: "typo".into(), label: None, key: None }],
+            entries: vec![MenuEntry {
+                profile: "typo".into(),
+                label: None,
+                key: None,
+            }],
             ..Default::default()
         };
         assert_eq!(
@@ -614,7 +654,10 @@ mod tests {
         let empty = Profile::default();
         let problems = empty.problems("empty");
         assert_eq!(problems.len(), 1);
-        assert!(problems[0].contains("nothing for a machine to boot"), "{problems:?}");
+        assert!(
+            problems[0].contains("nothing for a machine to boot"),
+            "{problems:?}"
+        );
     }
 
     #[test]

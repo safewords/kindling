@@ -89,7 +89,12 @@ impl Condition {
     }
 
     pub fn test(fact: &str, op: &str, value: Value) -> Self {
-        Condition::Test(Test { fact: fact.to_string(), key: None, op: op.to_string(), value })
+        Condition::Test(Test {
+            fact: fact.to_string(),
+            key: None,
+            op: op.to_string(),
+            value,
+        })
     }
 
     /// Whether this holds for every machine without asking anything.
@@ -130,7 +135,10 @@ impl Condition {
     pub fn from_json(value: Value) -> Result<Self, String> {
         match value {
             Value::Array(items) => Ok(Condition::All {
-                all: items.into_iter().map(Condition::from_json).collect::<Result<_, _>>()?,
+                all: items
+                    .into_iter()
+                    .map(Condition::from_json)
+                    .collect::<Result<_, _>>()?,
             }),
             Value::Object(mut map) => {
                 for group in ["all", "any"] {
@@ -162,7 +170,9 @@ impl Condition {
                             keys(&map)
                         ));
                     }
-                    return Ok(Condition::Not { not: Box::new(Condition::from_json(inner)?) });
+                    return Ok(Condition::Not {
+                        not: Box::new(Condition::from_json(inner)?),
+                    });
                 }
                 if map.contains_key("fact") {
                     return serde_json::from_value::<Test>(Value::Object(map))
@@ -183,7 +193,10 @@ impl Condition {
 }
 
 fn keys(map: &serde_json::Map<String, Value>) -> String {
-    map.keys().map(|k| format!("`{k}`")).collect::<Vec<_>>().join(", ")
+    map.keys()
+        .map(|k| format!("`{k}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl<'de> Deserialize<'de> for Condition {
@@ -273,8 +286,9 @@ pub struct FactSpec {
 const DEVICE_CLASSES: &[&str] = &["physical", "virtual", "sbc", "network", "unknown"];
 const STAGES: &[&str] = &["firmware", "ipxe"];
 const IPXE_BUILDS: &[&str] = &["not-ipxe", "unidentified", "own"];
-const WEEKDAYS: &[&str] =
-    &["mon", "tue", "wed", "thu", "fri", "sat", "sun", "weekday", "weekend"];
+const WEEKDAYS: &[&str] = &[
+    "mon", "tue", "wed", "thu", "fri", "sat", "sun", "weekday", "weekend",
+];
 
 macro_rules! fact {
     ($name:expr, $label:expr, $ty:ident, $group:expr, $known:expr, $example:expr, $help:expr) => {
@@ -369,7 +383,11 @@ pub fn fact(name: &str) -> Option<&'static FactSpec> {
 /// Every operator, with what it means — for the editor's labels and help.
 pub const OPERATORS: &[(&str, &str, &str)] = &[
     // (name, label, what the value is)
-    ("glob", "matches", "one or more patterns; `*` is any run, `?` one character"),
+    (
+        "glob",
+        "matches",
+        "one or more patterns; `*` is any run, `?` one character",
+    ),
     ("not_glob", "does not match", "one or more patterns"),
     ("equals", "is", "a value (case-insensitive)"),
     ("not_equals", "is not", "a value (case-insensitive)"),
@@ -378,7 +396,11 @@ pub const OPERATORS: &[(&str, &str, &str)] = &[
     ("contains", "contains", "one or more fragments"),
     ("starts_with", "starts with", "one or more prefixes"),
     ("ends_with", "ends with", "one or more suffixes"),
-    ("regex", "matches the regex", "one or more regular expressions (case-insensitive)"),
+    (
+        "regex",
+        "matches the regex",
+        "one or more regular expressions (case-insensitive)",
+    ),
     ("exists", "is known", "nothing"),
     ("missing", "is unknown", "nothing"),
     ("eq", "=", "a whole number"),
@@ -391,7 +413,11 @@ pub const OPERATORS: &[(&str, &str, &str)] = &[
     ("not_between", "is outside", "two bounds"),
     ("is", "is", "yes or no"),
     ("in_subnet", "is in", "one or more networks in CIDR form"),
-    ("not_in_subnet", "is not in", "one or more networks in CIDR form"),
+    (
+        "not_in_subnet",
+        "is not in",
+        "one or more networks in CIDR form",
+    ),
     ("has_any", "include any of", "one or more tags"),
     ("has_all", "include all of", "one or more tags"),
     ("has_none", "include none of", "one or more tags"),
@@ -491,9 +517,11 @@ impl Condition {
 
 fn compile_node(condition: &Condition, at: &str, problems: &mut Vec<String>) -> Node {
     match condition {
-        Condition::All { all } => {
-            Node::All(all.iter().map(|child| compile_node(child, at, problems)).collect())
-        }
+        Condition::All { all } => Node::All(
+            all.iter()
+                .map(|child| compile_node(child, at, problems))
+                .collect(),
+        ),
         Condition::Any { any } => {
             if any.is_empty() {
                 problems.push(format!(
@@ -501,7 +529,11 @@ fn compile_node(condition: &Condition, at: &str, problems: &mut Vec<String>) -> 
                      condition to it or remove it."
                 ));
             }
-            Node::Any(any.iter().map(|child| compile_node(child, at, problems)).collect())
+            Node::Any(
+                any.iter()
+                    .map(|child| compile_node(child, at, problems))
+                    .collect(),
+            )
         }
         Condition::Not { not } => {
             let inner = compile_node(not, at, problems);
@@ -524,12 +556,18 @@ fn describe_node(node: &Node) -> String {
     match node {
         Node::Leaf(leaf) => leaf.described.clone(),
         Node::All(children) if children.is_empty() => "anything".into(),
-        Node::All(children) => {
-            children.iter().map(describe_node).collect::<Vec<_>>().join(" and ")
-        }
+        Node::All(children) => children
+            .iter()
+            .map(describe_node)
+            .collect::<Vec<_>>()
+            .join(" and "),
         Node::Any(children) => format!(
             "({})",
-            children.iter().map(describe_node).collect::<Vec<_>>().join(" or ")
+            children
+                .iter()
+                .map(describe_node)
+                .collect::<Vec<_>>()
+                .join(" or ")
         ),
         Node::Not(_, described) => format!("not ({described})"),
     }
@@ -544,7 +582,14 @@ fn compile_test(test: &Test) -> Result<Leaf, String> {
         )
     })?;
 
-    if spec.keyed && test.key.as_deref().map(str::trim).unwrap_or_default().is_empty() {
+    if spec.keyed
+        && test
+            .key
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            .is_empty()
+    {
         return Err(format!("`{}` needs a `key` naming which one", spec.name));
     }
     if !spec.keyed && test.key.is_some() {
@@ -596,18 +641,30 @@ fn compile_test(test: &Test) -> Result<Leaf, String> {
                 .collect::<Result<_, _>>()?,
         ),
 
-        (FactType::Number, "eq") => Matcher::Compare(std::cmp::Ordering::Equal, false, number(value, name)?),
+        (FactType::Number, "eq") => {
+            Matcher::Compare(std::cmp::Ordering::Equal, false, number(value, name)?)
+        }
         (FactType::Number, "ne") => Matcher::NotEqualNumber(number(value, name)?),
-        (FactType::Number, "gt") => Matcher::Compare(std::cmp::Ordering::Greater, false, number(value, name)?),
-        (FactType::Number, "gte") => Matcher::Compare(std::cmp::Ordering::Greater, true, number(value, name)?),
-        (FactType::Number, "lt") => Matcher::Compare(std::cmp::Ordering::Less, false, number(value, name)?),
-        (FactType::Number, "lte") => Matcher::Compare(std::cmp::Ordering::Less, true, number(value, name)?),
+        (FactType::Number, "gt") => {
+            Matcher::Compare(std::cmp::Ordering::Greater, false, number(value, name)?)
+        }
+        (FactType::Number, "gte") => {
+            Matcher::Compare(std::cmp::Ordering::Greater, true, number(value, name)?)
+        }
+        (FactType::Number, "lt") => {
+            Matcher::Compare(std::cmp::Ordering::Less, false, number(value, name)?)
+        }
+        (FactType::Number, "lte") => {
+            Matcher::Compare(std::cmp::Ordering::Less, true, number(value, name)?)
+        }
         (FactType::Number, "between") => {
             let (low, high) = pair(value, name)?;
             let low = parse_number(&low, name)?;
             let high = parse_number(&high, name)?;
             if low > high {
-                return Err(format!("`{name} between` has its bounds the wrong way round: {low} > {high}"));
+                return Err(format!(
+                    "`{name} between` has its bounds the wrong way round: {low} > {high}"
+                ));
             }
             Matcher::Between(low, high, true)
         }
@@ -641,7 +698,8 @@ fn compile_test(test: &Test) -> Result<Leaf, String> {
             strings()?
                 .into_iter()
                 .map(|text| {
-                    text.parse().map_err(|_| format!("`{text}` is not an IP address"))
+                    text.parse()
+                        .map_err(|_| format!("`{text}` is not an IP address"))
                 })
                 .collect::<Result<_, _>>()?,
         ),
@@ -655,11 +713,13 @@ fn compile_test(test: &Test) -> Result<Leaf, String> {
                 Value::String(text) => text
                     .split_once(['-', '–'])
                     .map(|(a, b)| (a.trim().to_string(), b.trim().to_string()))
-                    .ok_or_else(|| format!("`{text}` is not a window; write it as `22:00-06:00`"))?,
+                    .ok_or_else(|| {
+                        format!("`{text}` is not a window; write it as `22:00-06:00`")
+                    })?,
                 other => pair(other, name)?,
             };
-            let window: TimeWindow = serde_json::from_value(serde_json::json!([from, to]))
-                .map_err(|e| e.to_string())?;
+            let window: TimeWindow =
+                serde_json::from_value(serde_json::json!([from, to])).map_err(|e| e.to_string())?;
             Matcher::Window(window, op == "between")
         }
 
@@ -667,8 +727,18 @@ fn compile_test(test: &Test) -> Result<Leaf, String> {
             let days = lowered(strings()?);
             for day in &days {
                 if !WEEKDAYS.contains(&day.as_str())
-                    && !["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "weekdays", "weekends"]
-                        .contains(&day.as_str())
+                    && ![
+                        "monday",
+                        "tuesday",
+                        "wednesday",
+                        "thursday",
+                        "friday",
+                        "saturday",
+                        "sunday",
+                        "weekdays",
+                        "weekends",
+                    ]
+                    .contains(&day.as_str())
                 {
                     return Err(format!("`{day}` is not a day; use {}", WEEKDAYS.join(", ")));
                 }
@@ -678,7 +748,10 @@ fn compile_test(test: &Test) -> Result<Leaf, String> {
 
         (FactType::Arch, "in" | "not_in") => Matcher::Arch(strings()?, op == "in"),
         (FactType::Oui, "in" | "not_in") => Matcher::Oui(
-            strings()?.iter().map(|s| s.parse()).collect::<Result<_, _>>()?,
+            strings()?
+                .iter()
+                .map(|s| s.parse())
+                .collect::<Result<_, _>>()?,
             op == "in",
         ),
 
@@ -689,14 +762,23 @@ fn compile_test(test: &Test) -> Result<Leaf, String> {
         Some(key) => format!("{}.{key}", spec.name),
         None => spec.name.to_string(),
     };
-    let op_label = OPERATORS.iter().find(|(n, ..)| *n == op).map(|(_, l, _)| *l).unwrap_or(op);
+    let op_label = OPERATORS
+        .iter()
+        .find(|(n, ..)| *n == op)
+        .map(|(_, l, _)| *l)
+        .unwrap_or(op);
     let described = if takes_value(op) {
         format!("{label} {op_label} {}", show_value(value))
     } else {
         format!("{label} {op_label}")
     };
 
-    Ok(Leaf { fact: spec, key: test.key.clone(), matcher, described })
+    Ok(Leaf {
+        fact: spec,
+        key: test.key.clone(),
+        matcher,
+        described,
+    })
 }
 
 fn show_value(value: &Value) -> String {
@@ -721,10 +803,17 @@ fn strings(value: &Value, fact: &str, op: &str) -> Result<Vec<String>, String> {
             })
             .collect::<Result<_, _>>()?,
         Value::Null => Vec::new(),
-        other => return Err(format!("`{fact} {op}` takes text or a list of it, not `{other}`")),
+        other => {
+            return Err(format!(
+                "`{fact} {op}` takes text or a list of it, not `{other}`"
+            ))
+        }
     };
-    let items: Vec<String> =
-        items.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    let items: Vec<String> = items
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
     if items.is_empty() {
         return Err(format!("`{fact} {op}` has no value to compare against"));
     }
@@ -752,14 +841,18 @@ fn check_choices(spec: &FactSpec, values: Vec<String>) -> Result<Vec<String>, St
 
 fn number(value: &Value, fact: &str) -> Result<i64, String> {
     match value {
-        Value::Number(n) => n.as_i64().ok_or_else(|| format!("`{fact}` compares whole numbers, not `{n}`")),
+        Value::Number(n) => n
+            .as_i64()
+            .ok_or_else(|| format!("`{fact}` compares whole numbers, not `{n}`")),
         Value::String(s) => parse_number(s, fact),
         other => Err(format!("`{fact}` compares whole numbers, not `{other}`")),
     }
 }
 
 fn parse_number(text: &str, fact: &str) -> Result<i64, String> {
-    text.trim().parse().map_err(|_| format!("`{fact}` compares whole numbers, not `{text}`"))
+    text.trim()
+        .parse()
+        .map_err(|_| format!("`{fact}` compares whole numbers, not `{text}`"))
 }
 
 fn pair(value: &Value, fact: &str) -> Result<(String, String), String> {
@@ -772,7 +865,9 @@ fn pair(value: &Value, fact: &str) -> Result<(String, String), String> {
         Value::Object(map) if map.contains_key("from") && map.contains_key("to") => {
             Ok((text(&map["from"]), text(&map["to"])))
         }
-        other => Err(format!("`{fact}` takes two bounds, `[from, to]`, not `{other}`")),
+        other => Err(format!(
+            "`{fact}` takes two bounds, `[from, to]`, not `{other}`"
+        )),
     }
 }
 
@@ -818,21 +913,24 @@ impl Compiled {
 
 fn node_mismatch(node: &Node, scope: &Scope<'_>) -> Option<Mismatch> {
     match node {
-        Node::All(children) => children.iter().find_map(|child| node_mismatch(child, scope)),
+        Node::All(children) => children
+            .iter()
+            .find_map(|child| node_mismatch(child, scope)),
         Node::Any(children) => {
             let mut first = None;
             for child in children {
-                match node_mismatch(child, scope) {
-                    None => return None,
-                    Some(miss) => {
-                        first.get_or_insert(miss);
-                    }
-                }
+                first.get_or_insert(node_mismatch(child, scope)?);
             }
             Some(match first {
                 Some(miss) if children.len() == 1 => miss,
-                Some(miss) => Mismatch { field: miss.field, detail: format!("none of {}", describe_node(node)) },
-                None => Mismatch { field: "any".into(), detail: "an empty `any` group".into() },
+                Some(miss) => Mismatch {
+                    field: miss.field,
+                    detail: format!("none of {}", describe_node(node)),
+                },
+                None => Mismatch {
+                    field: "any".into(),
+                    detail: "an empty `any` group".into(),
+                },
             })
         }
         Node::Not(inner, described) => match node_mismatch(inner, scope) {
@@ -861,9 +959,10 @@ fn node_mismatch(node: &Node, scope: &Scope<'_>) -> Option<Mismatch> {
 fn first_field(node: &Node) -> String {
     match node {
         Node::Leaf(leaf) => leaf.fact.name.to_string(),
-        Node::All(children) | Node::Any(children) => {
-            children.first().map(first_field).unwrap_or_else(|| "group".into())
-        }
+        Node::All(children) | Node::Any(children) => children
+            .first()
+            .map(first_field)
+            .unwrap_or_else(|| "group".into()),
         Node::Not(inner, _) => first_field(inner),
     }
 }
@@ -948,9 +1047,11 @@ fn leaf_holds(leaf: &Leaf, scope: &Scope<'_>) -> bool {
         Matcher::Contains(parts) => {
             text().is_some_and(|t| parts.iter().any(|p| t.to_lowercase().contains(p.as_str())))
         }
-        Matcher::StartsWith(parts) => {
-            text().is_some_and(|t| parts.iter().any(|p| t.to_lowercase().starts_with(p.as_str())))
-        }
+        Matcher::StartsWith(parts) => text().is_some_and(|t| {
+            parts
+                .iter()
+                .any(|p| t.to_lowercase().starts_with(p.as_str()))
+        }),
         Matcher::EndsWith(parts) => {
             text().is_some_and(|t| parts.iter().any(|p| t.to_lowercase().ends_with(p.as_str())))
         }
@@ -1001,8 +1102,15 @@ fn weekday_matches(wanted: &[String], at: DateTime<Utc>, offset_minutes: i64) ->
     let shifted = at + Duration::minutes(offset_minutes);
     let number = shifted.weekday().num_days_from_monday();
     let short = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][number as usize];
-    let long =
-        ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][number as usize];
+    let long = [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ][number as usize];
 
     wanted.iter().any(|name| match name.as_str() {
         "weekday" | "weekdays" => number < 5,
@@ -1030,22 +1138,29 @@ impl Match {
     /// reports is the one it always reported.
     pub fn into_condition(self) -> Condition {
         let mut all = Vec::new();
-        let list = |items: Vec<String>| Value::Array(items.into_iter().map(Value::String).collect());
+        let list =
+            |items: Vec<String>| Value::Array(items.into_iter().map(Value::String).collect());
         let globs = |items: &[Glob]| list(items.iter().map(|g| g.as_str().to_string()).collect());
 
         if !self.mac.is_empty() {
             all.push(Condition::test("mac", "glob", globs(&self.mac)));
         }
         if !self.oui.is_empty() {
-            all.push(Condition::test("oui", "in", list(self.oui.iter().map(|o| o.to_string()).collect())));
+            all.push(Condition::test(
+                "oui",
+                "in",
+                list(self.oui.iter().map(|o| o.to_string()).collect()),
+            ));
         }
-        for (name, items) in [("vendor", &self.vendor)] {
-            if !items.is_empty() {
-                all.push(Condition::test(name, "glob", globs(items)));
-            }
+        if !self.vendor.is_empty() {
+            all.push(Condition::test("vendor", "glob", globs(&self.vendor)));
         }
         if !self.device_class.is_empty() {
-            all.push(Condition::test("device_class", "in", list(lowered(self.device_class.clone()))));
+            all.push(Condition::test(
+                "device_class",
+                "in",
+                list(lowered(self.device_class.clone())),
+            ));
         }
         if !self.arch.is_empty() {
             all.push(Condition::test("arch", "in", list(self.arch.clone())));
@@ -1075,7 +1190,11 @@ impl Match {
             all.push(Condition::test("tag", "has_any", list(self.tag.clone())));
         }
         if let Some(stage) = self.stage {
-            all.push(Condition::test("stage", "equals", Value::String(stage_name(stage).into())));
+            all.push(Condition::test(
+                "stage",
+                "equals",
+                Value::String(stage_name(stage).into()),
+            ));
         }
         if let Some(ipxe) = self.ipxe {
             all.push(Condition::test("ipxe", "is", Value::Bool(ipxe)));
@@ -1090,7 +1209,11 @@ impl Match {
             all.push(Condition::test("boot_count", "lte", Value::from(most)));
         }
         if let Some(window) = self.time_between {
-            all.push(Condition::test("time", "between", serde_json::to_value(window).unwrap_or_default()));
+            all.push(Condition::test(
+                "time",
+                "between",
+                serde_json::to_value(window).unwrap_or_default(),
+            ));
         }
         if !self.weekday.is_empty() {
             all.push(Condition::test("weekday", "in", list(self.weekday.clone())));
@@ -1112,10 +1235,19 @@ mod tests {
     use serde_json::json;
 
     fn facts() -> ClientFacts {
-        ClientFacts::new("18:66:da:11:22:33".parse().unwrap(), ClientArch::X64_UEFI, Stage::Ipxe)
-            .with_smbios(Some("Dell Inc.".into()), Some("PowerEdge R630".into()), None, None)
-            .with_client_ip(Some("10.20.1.5".parse().unwrap()))
-            .identified(&OuiDatabase::new())
+        ClientFacts::new(
+            "18:66:da:11:22:33".parse().unwrap(),
+            ClientArch::X64_UEFI,
+            Stage::Ipxe,
+        )
+        .with_smbios(
+            Some("Dell Inc.".into()),
+            Some("PowerEdge R630".into()),
+            None,
+            None,
+        )
+        .with_client_ip(Some("10.20.1.5".parse().unwrap()))
+        .identified(&OuiDatabase::new())
     }
 
     fn holds(condition: Value, facts: &ClientFacts) -> bool {
@@ -1130,7 +1262,12 @@ mod tests {
     ) -> bool {
         let condition = Condition::from_json(condition).expect("parses");
         let compiled = condition.compile("test").expect("compiles");
-        compiled.matches(&Scope { facts, tags, vars, offset_minutes: 0 })
+        compiled.matches(&Scope {
+            facts,
+            tags,
+            vars,
+            offset_minutes: 0,
+        })
     }
 
     #[test]
@@ -1157,16 +1294,43 @@ mod tests {
     fn every_operator_family_does_what_it_says() {
         let facts = facts();
         let cases = [
-            (json!({ "fact": "network", "op": "in_subnet", "value": ["10.20.0.0/16"] }), true),
-            (json!({ "fact": "network", "op": "not_in_subnet", "value": "10.20.0.0/16" }), false),
-            (json!({ "fact": "client_ip", "op": "equals", "value": "10.20.1.5" }), true),
-            (json!({ "fact": "boot_count", "op": "lte", "value": 0 }), true),
-            (json!({ "fact": "boot_count", "op": "between", "value": [1, 3] }), false),
+            (
+                json!({ "fact": "network", "op": "in_subnet", "value": ["10.20.0.0/16"] }),
+                true,
+            ),
+            (
+                json!({ "fact": "network", "op": "not_in_subnet", "value": "10.20.0.0/16" }),
+                false,
+            ),
+            (
+                json!({ "fact": "client_ip", "op": "equals", "value": "10.20.1.5" }),
+                true,
+            ),
+            (
+                json!({ "fact": "boot_count", "op": "lte", "value": 0 }),
+                true,
+            ),
+            (
+                json!({ "fact": "boot_count", "op": "between", "value": [1, 3] }),
+                false,
+            ),
             (json!({ "fact": "hostname", "op": "missing" }), true),
-            (json!({ "fact": "product", "op": "contains", "value": "r63" }), true),
-            (json!({ "fact": "product", "op": "starts_with", "value": ["optiplex", "poweredge"] }), true),
-            (json!({ "fact": "oui", "op": "in", "value": ["18-66-DA"] }), true),
-            (json!({ "fact": "arch", "op": "not_in", "value": ["bios"] }), true),
+            (
+                json!({ "fact": "product", "op": "contains", "value": "r63" }),
+                true,
+            ),
+            (
+                json!({ "fact": "product", "op": "starts_with", "value": ["optiplex", "poweredge"] }),
+                true,
+            ),
+            (
+                json!({ "fact": "oui", "op": "in", "value": ["18-66-DA"] }),
+                true,
+            ),
+            (
+                json!({ "fact": "arch", "op": "not_in", "value": ["bios"] }),
+                true,
+            ),
             (json!({ "fact": "known", "op": "is", "value": false }), true),
             (json!({ "fact": "tag", "op": "empty" }), true),
         ];
@@ -1183,7 +1347,12 @@ mod tests {
         let mut vars = BTreeMap::new();
         vars.insert("role".to_string(), "storage".to_string());
 
-        assert!(holds_with(json!({ "fact": "tag", "op": "has_all", "value": ["LAB"] }), &facts, &tags, &vars));
+        assert!(holds_with(
+            json!({ "fact": "tag", "op": "has_all", "value": ["LAB"] }),
+            &facts,
+            &tags,
+            &vars
+        ));
         assert!(holds_with(
             json!({ "fact": "var", "key": "role", "op": "equals", "value": "storage" }),
             &facts,
@@ -1213,9 +1382,19 @@ mod tests {
 
         let problems = condition.compile("rule `x` when").unwrap_err();
         assert_eq!(problems.len(), 7, "{problems:#?}");
-        assert!(problems.iter().all(|p| p.starts_with("rule `x` when")), "{problems:#?}");
+        assert!(
+            problems.iter().all(|p| p.starts_with("rule `x` when")),
+            "{problems:#?}"
+        );
         let text = problems.join("\n");
-        for needle in ["vendorr", "cannot be asked `glob`", "not a regular expression", "virtaul", "needs a `key`", "empty `any`"] {
+        for needle in [
+            "vendorr",
+            "cannot be asked `glob`",
+            "not a regular expression",
+            "virtaul",
+            "needs a `key`",
+            "empty `any`",
+        ] {
             assert!(text.contains(needle), "missing {needle}: {text}");
         }
     }
@@ -1224,13 +1403,17 @@ mod tests {
     fn a_misspelt_key_is_refused_rather_than_matching_everything() {
         let error = Condition::from_json(json!({ "vendorr": ["Dell"] })).unwrap_err();
         assert!(error.contains("vendorr"), "{error}");
-        let error = Condition::from_json(json!({ "fact": "vendor", "op": "glob", "valeu": "x" })).unwrap_err();
+        let error = Condition::from_json(json!({ "fact": "vendor", "op": "glob", "valeu": "x" }))
+            .unwrap_err();
         assert!(error.contains("valeu"), "{error}");
     }
 
     #[test]
     fn the_flat_legacy_form_becomes_an_equivalent_tree() {
-        let condition = Condition::from_json(json!({ "vendor": ["Dell"], "known": false, "subnet": ["10.20.0.0/16"] })).unwrap();
+        let condition = Condition::from_json(
+            json!({ "vendor": ["Dell"], "known": false, "subnet": ["10.20.0.0/16"] }),
+        )
+        .unwrap();
         assert_eq!(condition.facts(), vec!["vendor", "network", "known"]);
         assert!(holds(serde_json::to_value(&condition).unwrap(), &facts()));
     }
@@ -1245,7 +1428,12 @@ mod tests {
         let compiled = condition.compile("t").unwrap();
         let facts = facts();
         let miss = compiled
-            .mismatch(&Scope { facts: &facts, tags: &[], vars: &BTreeMap::new(), offset_minutes: 0 })
+            .mismatch(&Scope {
+                facts: &facts,
+                tags: &[],
+                vars: &BTreeMap::new(),
+                offset_minutes: 0,
+            })
             .unwrap();
         assert_eq!(miss.field, "arch");
         assert!(miss.detail.contains("bios"), "{}", miss.detail);
@@ -1258,7 +1446,9 @@ mod tests {
         for spec in FACTS {
             for op in spec.ty.operators() {
                 let value = match (spec.ty, *op) {
-                    (_, "between" | "not_between") if spec.ty == FactType::Time => json!(["22:00", "06:00"]),
+                    (_, "between" | "not_between") if spec.ty == FactType::Time => {
+                        json!(["22:00", "06:00"])
+                    }
                     (_, "between") => json!([1, 2]),
                     (FactType::Number, _) => json!(1),
                     (FactType::Bool, _) => json!(true),
@@ -1277,7 +1467,10 @@ mod tests {
                 Condition::Test(test.clone())
                     .compile("schema")
                     .unwrap_or_else(|e| panic!("{} {op}: {e:?}", spec.name));
-                assert!(OPERATORS.iter().any(|(n, ..)| n == op), "`{op}` has no label");
+                assert!(
+                    OPERATORS.iter().any(|(n, ..)| n == op),
+                    "`{op}` has no label"
+                );
             }
         }
     }

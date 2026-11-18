@@ -68,8 +68,9 @@ impl Command for ServeCommand {
         // port that was already taken is then a message at a terminal
         // somebody is looking at, rather than a rack that was offered a file
         // and could not fetch it.
-        let mut listeners: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>> =
-            Vec::new();
+        let mut listeners: Vec<
+            std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>,
+        > = Vec::new();
 
         if dhcp {
             let bind: Ipv4Addr = settings
@@ -94,7 +95,10 @@ impl Command for ServeCommand {
                 .map_err(|e| Error::internal(e.to_string()))?;
 
             listeners.push(Box::pin(async move {
-                bound.serve().await.map_err(|e| Error::internal(e.to_string()))
+                bound
+                    .serve()
+                    .await
+                    .map_err(|e| Error::internal(e.to_string()))
             }));
         }
 
@@ -121,7 +125,10 @@ impl Command for ServeCommand {
                 .map_err(|e| Error::internal(e.to_string()))?;
 
             listeners.push(Box::pin(async move {
-                bound.serve().await.map_err(|e| Error::internal(e.to_string()))
+                bound
+                    .serve()
+                    .await
+                    .map_err(|e| Error::internal(e.to_string()))
             }));
         }
 
@@ -216,8 +223,14 @@ fn banner(
         rules.rules().len(),
         rules.profiles().len()
     );
-    println!("  proxy DHCP                     {}", if dhcp { "on (67, 4011)" } else { "off" });
-    println!("  TFTP                           {}", if tftp { "on (69)" } else { "off" });
+    println!(
+        "  proxy DHCP                     {}",
+        if dhcp { "on (67, 4011)" } else { "off" }
+    );
+    println!(
+        "  TFTP                           {}",
+        if tftp { "on (69)" } else { "off" }
+    );
 
     if rules.rules().is_empty() && rules.settings().default_profile.is_none() {
         println!(

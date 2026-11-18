@@ -80,8 +80,7 @@ pub mod discovery {
     /// The three bits together matter. `USE_OFFERED_BOOTFILE` alone leaves
     /// firmware free to go discovering first, and the discovery it does is a
     /// broadcast that times out.
-    pub const ANSWER_IS_IN_THE_OFFER: u8 =
-        NO_BROADCAST | NO_MULTICAST | USE_OFFERED_BOOTFILE;
+    pub const ANSWER_IS_IN_THE_OFFER: u8 = NO_BROADCAST | NO_MULTICAST | USE_OFFERED_BOOTFILE;
 }
 
 /// The PXE server type in sub-options 8 and 9. Type 0 is "this bootstrap
@@ -175,7 +174,9 @@ pub fn parse_vendor_options(bytes: &[u8]) -> Vec<(u8, Vec<u8>)> {
             0 => index += 1,
             pxe::END => break,
             code => {
-                let Some(&length) = bytes.get(index + 1) else { break };
+                let Some(&length) = bytes.get(index + 1) else {
+                    break;
+                };
                 let start = index + 2;
                 let end = start + length as usize;
                 if end > bytes.len() {
@@ -195,7 +196,10 @@ pub fn parse_vendor_options(bytes: &[u8]) -> Vec<(u8, Vec<u8>)> {
 /// vendor class with an invisible NUL on the end matches no glob anybody
 /// writes.
 pub fn to_string(bytes: &[u8]) -> String {
-    let end = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
     String::from_utf8_lossy(&bytes[..end]).trim().to_string()
 }
 
@@ -252,31 +256,55 @@ mod tests {
     fn the_proxy_options_tell_the_client_to_stop_looking() {
         // The bits that turn a fifteen-second discovery timeout into an
         // immediate download.
-        let options = proxy_vendor_options("kindling", &["10.0.0.2".parse().unwrap()], discovery::ANSWER_IS_IN_THE_OFFER);
+        let options = proxy_vendor_options(
+            "kindling",
+            &["10.0.0.2".parse().unwrap()],
+            discovery::ANSWER_IS_IN_THE_OFFER,
+        );
         let parsed = parse_vendor_options(&options);
 
-        let control = parsed.iter().find(|(code, _)| *code == pxe::DISCOVERY_CONTROL).unwrap();
+        let control = parsed
+            .iter()
+            .find(|(code, _)| *code == pxe::DISCOVERY_CONTROL)
+            .unwrap();
         assert_eq!(control.1, vec![0x0b]);
-        assert_eq!(0x0b, discovery::NO_BROADCAST | discovery::NO_MULTICAST | discovery::USE_OFFERED_BOOTFILE);
+        assert_eq!(
+            0x0b,
+            discovery::NO_BROADCAST | discovery::NO_MULTICAST | discovery::USE_OFFERED_BOOTFILE
+        );
     }
 
     #[test]
     fn the_boot_server_list_carries_this_server() {
-        let options =
-            proxy_vendor_options("kindling", &["10.0.0.2".parse().unwrap()], discovery::ANSWER_IS_IN_THE_OFFER);
+        let options = proxy_vendor_options(
+            "kindling",
+            &["10.0.0.2".parse().unwrap()],
+            discovery::ANSWER_IS_IN_THE_OFFER,
+        );
         let parsed = parse_vendor_options(&options);
 
-        let servers = parsed.iter().find(|(code, _)| *code == pxe::BOOT_SERVERS).unwrap();
-        assert_eq!(servers.1, vec![0, 0, 1, 10, 0, 0, 2], "type 0, one server, its address");
+        let servers = parsed
+            .iter()
+            .find(|(code, _)| *code == pxe::BOOT_SERVERS)
+            .unwrap();
+        assert_eq!(
+            servers.1,
+            vec![0, 0, 1, 10, 0, 0, 2],
+            "type 0, one server, its address"
+        );
     }
 
     #[test]
     fn the_menu_prompt_times_out_immediately_so_nothing_is_displayed() {
         // A prompt in a rack is a machine that waits forever.
-        let options = proxy_vendor_options("kindling netboot", &[], discovery::ANSWER_IS_IN_THE_OFFER);
+        let options =
+            proxy_vendor_options("kindling netboot", &[], discovery::ANSWER_IS_IN_THE_OFFER);
         let parsed = parse_vendor_options(&options);
 
-        let (_, prompt) = parsed.iter().find(|(code, _)| *code == pxe::MENU_PROMPT).unwrap();
+        let (_, prompt) = parsed
+            .iter()
+            .find(|(code, _)| *code == pxe::MENU_PROMPT)
+            .unwrap();
         assert_eq!(prompt[0], 0, "timeout 0 means auto-select");
         assert_eq!(to_string(&prompt[1..]), "kindling netboot");
     }
@@ -288,14 +316,20 @@ mod tests {
         let long = "é".repeat(200);
         let options = proxy_vendor_options(&long, &[], discovery::ANSWER_IS_IN_THE_OFFER);
         let parsed = parse_vendor_options(&options);
-        let (_, menu) = parsed.iter().find(|(code, _)| *code == pxe::BOOT_MENU).unwrap();
+        let (_, menu) = parsed
+            .iter()
+            .find(|(code, _)| *code == pxe::BOOT_MENU)
+            .unwrap();
         assert!(menu.len() <= 255);
     }
 
     #[test]
     fn the_boot_item_answer_names_layer_zero() {
         let parsed = parse_vendor_options(&boot_item_vendor_options());
-        let (_, item) = parsed.iter().find(|(code, _)| *code == pxe::BOOT_ITEM).unwrap();
+        let (_, item) = parsed
+            .iter()
+            .find(|(code, _)| *code == pxe::BOOT_ITEM)
+            .unwrap();
         assert_eq!(item, &vec![0, 0, 0, 0]);
     }
 

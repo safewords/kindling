@@ -67,7 +67,12 @@ impl Model for BootEvent {}
 
 impl BootEvent {
     /// A row for a decision this server made.
-    pub fn decided(facts: &ClientFacts, kind: EventKind, decision: &Decision, detail: Option<String>) -> Self {
+    pub fn decided(
+        facts: &ClientFacts,
+        kind: EventKind,
+        decision: &Decision,
+        detail: Option<String>,
+    ) -> Self {
         Self {
             id: 0,
             mac: facts.mac.to_string(),
@@ -123,9 +128,13 @@ impl BootEvent {
     pub fn summary(&self) -> String {
         let profile = self.profile.as_deref().unwrap_or("—");
         let detail = self.detail.as_deref().unwrap_or("");
-        format!("{} {} {profile} {detail}", self.at.format("%Y-%m-%d %H:%M:%S"), self.kind)
-            .trim_end()
-            .to_string()
+        format!(
+            "{} {} {profile} {detail}",
+            self.at.format("%Y-%m-%d %H:%M:%S"),
+            self.kind
+        )
+        .trim_end()
+        .to_string()
     }
 }
 
@@ -138,7 +147,11 @@ mod tests {
     use crate::pxe::rules::RuleSet;
 
     fn facts() -> ClientFacts {
-        ClientFacts::new("18:66:da:11:22:33".parse().unwrap(), ClientArch::BIOS, Stage::Firmware)
+        ClientFacts::new(
+            "18:66:da:11:22:33".parse().unwrap(),
+            ClientArch::BIOS,
+            Stage::Firmware,
+        )
     }
 
     #[test]
@@ -158,7 +171,8 @@ profile = "install"
 
         let facts = facts();
         let decision = decide(&rules, &facts, &Overrides::default());
-        let event = BootEvent::decided(&facts, EventKind::Offer, &decision, Some("ipxe.efi".into()));
+        let event =
+            BootEvent::decided(&facts, EventKind::Offer, &decision, Some("ipxe.efi".into()));
 
         assert_eq!(event.mac, "18:66:da:11:22:33");
         assert_eq!(event.kind, "offer");

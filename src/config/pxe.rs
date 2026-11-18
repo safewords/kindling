@@ -59,7 +59,10 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     };
 
     let port = config.get(SERVER_PORT).unwrap_or(8080);
-    let http_base = match env.get("PXE_HTTP_BASE").filter(|base| !base.trim().is_empty()) {
+    let http_base = match env
+        .get("PXE_HTTP_BASE")
+        .filter(|base| !base.trim().is_empty())
+    {
         Some(base) => base.trim_end_matches('/').to_string(),
         // Built from the same address everything else uses, so there is one
         // place to change when the server moves.
@@ -68,18 +71,30 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
 
     config.set(PXE_SERVER_IP, server_ip)?;
     config.set(PXE_HTTP_BASE, http_base)?;
-    config.set(PXE_DESCRIPTION, env.string("PXE_DESCRIPTION", "kindling netboot"))?;
-    config.set(PXE_RULES_PATH, env.string("PXE_RULES_PATH", "pxe-rules.toml"))?;
+    config.set(
+        PXE_DESCRIPTION,
+        env.string("PXE_DESCRIPTION", "kindling netboot"),
+    )?;
+    config.set(
+        PXE_RULES_PATH,
+        env.string("PXE_RULES_PATH", "pxe-rules.toml"),
+    )?;
     config.set(PXE_TFTP_ROOT, env.string("PXE_TFTP_ROOT", "tftproot"))?;
     config.set(PXE_OUI_FILE, env.string("PXE_OUI_FILE", ""))?;
 
     config.set(PXE_DHCP_ENABLED, dhcp_enabled)?;
     config.set(PXE_DHCP_BIND, env.string("PXE_DHCP_BIND", "0.0.0.0"))?;
-    config.set(PXE_DHCP_BOOT_SERVER_PORT, env.bool("PXE_DHCP_BOOT_SERVER_PORT", true))?;
+    config.set(
+        PXE_DHCP_BOOT_SERVER_PORT,
+        env.bool("PXE_DHCP_BOOT_SERVER_PORT", true),
+    )?;
 
     config.set(PXE_TFTP_ENABLED, env.bool("PXE_TFTP_ENABLED", true))?;
     config.set(PXE_TFTP_BIND, env.string("PXE_TFTP_BIND", "0.0.0.0"))?;
-    config.set(PXE_TFTP_PORT, env.int("PXE_TFTP_PORT", 69).clamp(1, 65535) as u16)?;
+    config.set(
+        PXE_TFTP_PORT,
+        env.int("PXE_TFTP_PORT", 69).clamp(1, 65535) as u16,
+    )?;
 
     // 1468 is a 1500-byte frame less the IP, UDP and TFTP headers. Above it
     // every packet fragments, which is slower than the smaller block.
@@ -95,8 +110,14 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     // A loop is four whole DHCP transactions for one loader inside ninety
     // seconds. A lap is five to ten seconds, so four of them fit comfortably,
     // while a machine that is merely slow never gets there. `0` turns it off.
-    config.set(PXE_LOOP_THRESHOLD, env.int("PXE_LOOP_THRESHOLD", 4).max(0) as usize)?;
-    config.set(PXE_LOOP_WINDOW_SECS, env.int("PXE_LOOP_WINDOW_SECS", 90).max(1) as u64)?;
+    config.set(
+        PXE_LOOP_THRESHOLD,
+        env.int("PXE_LOOP_THRESHOLD", 4).max(0) as usize,
+    )?;
+    config.set(
+        PXE_LOOP_WINDOW_SECS,
+        env.int("PXE_LOOP_WINDOW_SECS", 90).max(1) as u64,
+    )?;
 
     config.set(PXE_API_TOKEN, env.string("PXE_API_TOKEN", ""))?;
     config.set(
@@ -141,25 +162,40 @@ mod tests {
     fn configured(env: &str) -> Result<Config> {
         let config = Config::new();
         config.set(SERVER_PORT, 8080u16)?;
-        configure(&config, &Env::parse(&format!("APP_ENV=local
-{env}")).isolated())?;
+        configure(
+            &config,
+            &Env::parse(&format!(
+                "APP_ENV=local
+{env}"
+            ))
+            .isolated(),
+        )?;
         Ok(config)
     }
 
     #[test]
     fn the_defaults_produce_a_server_that_runs_with_no_env_file_at_all() {
         let config = configured("").unwrap();
-        assert_eq!(config.get(PXE_RULES_PATH).as_deref(), Some("pxe-rules.toml"));
+        assert_eq!(
+            config.get(PXE_RULES_PATH).as_deref(),
+            Some("pxe-rules.toml")
+        );
         assert_eq!(config.get(PXE_TFTP_ROOT).as_deref(), Some("tftproot"));
         assert_eq!(config.get(PXE_TFTP_PORT), Some(69));
         assert_eq!(config.get(PXE_DHCP_ENABLED), Some(true));
-        assert!(config.get(PXE_SERVER_IP).is_some(), "an address was detected");
+        assert!(
+            config.get(PXE_SERVER_IP).is_some(),
+            "an address was detected"
+        );
     }
 
     #[test]
     fn the_http_base_is_built_from_the_server_address_and_port() {
         let config = configured("PXE_SERVER_IP=10.0.0.2").unwrap();
-        assert_eq!(config.get(PXE_HTTP_BASE).as_deref(), Some("http://10.0.0.2:8080"));
+        assert_eq!(
+            config.get(PXE_HTTP_BASE).as_deref(),
+            Some("http://10.0.0.2:8080")
+        );
     }
 
     #[test]
@@ -179,8 +215,16 @@ mod tests {
     fn an_address_that_is_not_an_address_stops_the_boot() {
         // It becomes four bytes in a DHCP reply. There is no "roughly".
         let error = configured("PXE_SERVER_IP=boot.example.com").unwrap_err();
-        assert!(error.message().contains("PXE_SERVER_IP"), "{}", error.message());
-        assert!(error.message().contains("four bytes"), "{}", error.message());
+        assert!(
+            error.message().contains("PXE_SERVER_IP"),
+            "{}",
+            error.message()
+        );
+        assert!(
+            error.message().contains("four bytes"),
+            "{}",
+            error.message()
+        );
     }
 
     #[test]
@@ -190,9 +234,17 @@ mod tests {
 
         // Unset means production.
         let error = configure(&config, &Env::parse("").isolated()).unwrap_err();
-        assert!(error.message().contains("PXE_SERVER_IP is not set"), "{}", error.message());
+        assert!(
+            error.message().contains("PXE_SERVER_IP is not set"),
+            "{}",
+            error.message()
+        );
         // And it says what it would have used, so the fix is a copy and paste.
-        assert!(error.message().contains("It looks like"), "{}", error.message());
+        assert!(
+            error.message().contains("It looks like"),
+            "{}",
+            error.message()
+        );
     }
 
     #[test]
@@ -247,6 +299,9 @@ mod tests {
     #[test]
     fn detection_always_answers_something_usable() {
         let detected = detect_server_ip();
-        assert!(!detected.is_unspecified(), "0.0.0.0 is not an address to hand a client");
+        assert!(
+            !detected.is_unspecified(),
+            "0.0.0.0 is not an address to hand a client"
+        );
     }
 }

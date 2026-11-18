@@ -189,7 +189,10 @@ impl Host {
     }
 
     pub fn has_tag(&self, tag: &str) -> bool {
-        self.tags.0.iter().any(|held| held.eq_ignore_ascii_case(tag))
+        self.tags
+            .0
+            .iter()
+            .any(|held| held.eq_ignore_ascii_case(tag))
     }
 
     /// Add a tag, keeping the list a set and its order stable.
@@ -252,8 +255,12 @@ mod tests {
     use crate::pxe::oui::OuiDatabase;
 
     fn facts() -> ClientFacts {
-        ClientFacts::new("18:66:da:11:22:33".parse().unwrap(), ClientArch::X64_UEFI, Stage::Firmware)
-            .identified(&OuiDatabase::new())
+        ClientFacts::new(
+            "18:66:da:11:22:33".parse().unwrap(),
+            ClientArch::X64_UEFI,
+            Stage::Firmware,
+        )
+        .identified(&OuiDatabase::new())
     }
 
     #[test]
@@ -262,7 +269,10 @@ mod tests {
         assert_eq!(host.mac, "18:66:da:11:22:33");
         assert_eq!(host.vendor.as_deref(), Some("Dell"));
         assert_eq!(host.arch, "x64-uefi");
-        assert_eq!(host.boot_count, 0, "it has not booted yet, it has been seen");
+        assert_eq!(
+            host.boot_count, 0,
+            "it has not booted yet, it has been seen"
+        );
         assert!(host.tags.0.is_empty());
     }
 
@@ -279,12 +289,25 @@ mod tests {
             ClientArch::X64_UEFI,
             Stage::Ipxe,
         )
-        .with_smbios(Some("Dell Inc.".into()), Some("OptiPlex 7090".into()), None, None);
+        .with_smbios(
+            Some("Dell Inc.".into()),
+            Some("OptiPlex 7090".into()),
+            None,
+            None,
+        );
 
         host.observe(&from_ipxe);
 
-        assert_eq!(host.product.as_deref(), Some("OptiPlex 7090"), "the new fact landed");
-        assert_eq!(host.hostname.as_deref(), Some("lab-01"), "the old one survived");
+        assert_eq!(
+            host.product.as_deref(),
+            Some("OptiPlex 7090"),
+            "the new fact landed"
+        );
+        assert_eq!(
+            host.hostname.as_deref(),
+            Some("lab-01"),
+            "the old one survived"
+        );
     }
 
     #[test]

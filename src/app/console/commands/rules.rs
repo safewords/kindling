@@ -54,24 +54,26 @@ impl Command for RulesCommand {
         let store = app.resolve::<RuleStore>()?;
 
         if let Some(path) = args.option("import") {
-            return Ok(match store.import(std::path::Path::new(path), "console").await {
-                Ok(applied) => {
-                    println!(
-                        "Imported `{path}`: {} rule(s), {} profile(s){}.",
-                        applied.rules.rules().len(),
-                        applied.rules.profiles().len(),
-                        applied
-                            .revision
-                            .map(|r| format!(", revision {}", r.id))
-                            .unwrap_or_else(|| " — identical to what was stored".into())
-                    );
-                    exit::SUCCESS
-                }
-                Err(e) => {
-                    eprintln!("{e}\n\nNothing changed; the stored policy is as it was.");
-                    exit::FAILURE
-                }
-            });
+            return Ok(
+                match store.import(std::path::Path::new(path), "console").await {
+                    Ok(applied) => {
+                        println!(
+                            "Imported `{path}`: {} rule(s), {} profile(s){}.",
+                            applied.rules.rules().len(),
+                            applied.rules.profiles().len(),
+                            applied
+                                .revision
+                                .map(|r| format!(", revision {}", r.id))
+                                .unwrap_or_else(|| " — identical to what was stored".into())
+                        );
+                        exit::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{e}\n\nNothing changed; the stored policy is as it was.");
+                        exit::FAILURE
+                    }
+                },
+            );
         }
 
         if args.flag("export") || args.option("export").is_some() {
@@ -84,7 +86,10 @@ impl Command for RulesCommand {
                         return Ok(exit::FAILURE);
                     }
                 },
-                _ => println!("{}", serde_json::to_string_pretty(&document).unwrap_or_default()),
+                _ => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&document).unwrap_or_default()
+                ),
             }
             return Ok(exit::SUCCESS);
         }
@@ -103,7 +108,11 @@ impl Command for RulesCommand {
                     .iter()
                     .map(|r| {
                         vec![
-                            if Some(r.id) == current { format!("{} *", r.id) } else { r.id.to_string() },
+                            if Some(r.id) == current {
+                                format!("{} *", r.id)
+                            } else {
+                                r.id.to_string()
+                            },
                             r.created_at.format("%Y-%m-%d %H:%M").to_string(),
                             r.actor.clone(),
                             r.rules.to_string(),
@@ -195,7 +204,10 @@ fn show(store: &RuleStore) {
     println!(
         "Policy from the {}{}  —  loaded {}",
         rules.source(),
-        store.revision().map(|r| format!(", revision {r}")).unwrap_or_default(),
+        store
+            .revision()
+            .map(|r| format!(", revision {r}"))
+            .unwrap_or_default(),
         rules.loaded_at().format("%Y-%m-%d %H:%M:%S UTC")
     );
 
@@ -209,7 +221,11 @@ fn show(store: &RuleStore) {
 
     println!(
         "\nDefault profile: {}",
-        rules.settings().default_profile.as_deref().unwrap_or("none")
+        rules
+            .settings()
+            .default_profile
+            .as_deref()
+            .unwrap_or("none")
     );
 
     if !rules.bootloaders().is_empty() {
@@ -250,9 +266,17 @@ fn show(store: &RuleStore) {
                 let (when, unless) = rules.describe(&rule.name).unwrap_or_default();
                 vec![
                     rule.priority.to_string(),
-                    if rule.enabled { rule.name.clone() } else { format!("{} (off)", rule.name) },
+                    if rule.enabled {
+                        rule.name.clone()
+                    } else {
+                        format!("{} (off)", rule.name)
+                    },
                     actions(rule),
-                    if rule.stops() { "yes".into() } else { "no".into() },
+                    if rule.stops() {
+                        "yes".into()
+                    } else {
+                        "no".into()
+                    },
                     match unless {
                         Some(unless) => format!("{when}, unless {unless}"),
                         None => when,
@@ -294,8 +318,14 @@ mod tests {
         // It is also what a new install is seeded with, so this asserts the
         // default is valid as well.
         let rules = RuleSet::parse(STARTER_POLICY).expect("the starter policy must be valid");
-        assert!(!rules.rules().is_empty(), "an example with no rules teaches nothing");
-        assert!(rules.settings().default_profile.is_some(), "and it should boot something");
+        assert!(
+            !rules.rules().is_empty(),
+            "an example with no rules teaches nothing"
+        );
+        assert!(
+            rules.settings().default_profile.is_some(),
+            "and it should boot something"
+        );
     }
 
     #[test]
@@ -318,12 +348,18 @@ when = { vendor = ["Dell"], arch = ["x64-uefi"], known = false }
 
         assert_eq!(actions(&rules.rules()[0]), "boot a, +x, -y, role=db");
         let (when, _) = rules.describe("r").unwrap();
-        assert!(when.contains("vendor") && when.contains("arch") && when.contains("known"), "{when}");
+        assert!(
+            when.contains("vendor") && when.contains("arch") && when.contains("known"),
+            "{when}"
+        );
     }
 
     #[test]
     fn a_rule_with_no_conditions_says_so() {
-        let rules = RuleSet::parse("[profiles.a]\nkind = \"local\"\n\n[[rule]]\nname = \"r\"\nprofile = \"a\"\n").unwrap();
+        let rules = RuleSet::parse(
+            "[profiles.a]\nkind = \"local\"\n\n[[rule]]\nname = \"r\"\nprofile = \"a\"\n",
+        )
+        .unwrap();
         assert_eq!(rules.describe("r").unwrap().0, "anything");
     }
 }

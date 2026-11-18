@@ -64,8 +64,15 @@ mod tests {
 
     #[test]
     fn this_applications_keys_stay_in_their_own_section() {
-        for key in [PXE_SERVER_IP.path(), PXE_TFTP_ROOT.path(), PXE_API_TOKEN.path()] {
-            assert!(key.starts_with("pxe."), "`{key}` is outside the application's section");
+        for key in [
+            PXE_SERVER_IP.path(),
+            PXE_TFTP_ROOT.path(),
+            PXE_API_TOKEN.path(),
+        ] {
+            assert!(
+                key.starts_with("pxe."),
+                "`{key}` is outside the application's section"
+            );
         }
     }
 }

@@ -27,7 +27,9 @@ async fn main() -> Result<()> {
         }
     };
 
-    let code = pxe::routes::console::commands().run_from_env(&application).await;
+    let code = pxe::routes::console::commands()
+        .run_from_env(&application)
+        .await;
 
     application.terminate();
     std::process::exit(code);
@@ -43,7 +45,10 @@ fn quieten_sql_logging() {
     if std::env::var_os("RUST_LOG").is_some() {
         return;
     }
-    if Env::load_or_default(".env").file_vars().contains_key("RUST_LOG") {
+    if Env::load_or_default(".env")
+        .file_vars()
+        .contains_key("RUST_LOG")
+    {
         return;
     }
 

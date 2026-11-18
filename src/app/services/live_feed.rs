@@ -103,7 +103,13 @@ impl LiveUpdate {
     }
 
     pub fn policy_failed(error: impl Into<String>) -> Self {
-        Self::Policy { reloaded: false, rules: None, profiles: None, loaded_at: None, error: Some(error.into()) }
+        Self::Policy {
+            reloaded: false,
+            rules: None,
+            profiles: None,
+            loaded_at: None,
+            error: Some(error.into()),
+        }
     }
 
     /// The text frame this becomes.
@@ -113,7 +119,9 @@ impl LiveUpdate {
     pub fn to_frame(&self) -> Arc<str> {
         // Every variant is plain data with string keys, so this cannot fail;
         // an empty object is the harmless answer if a future variant can.
-        serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string()).into()
+        serde_json::to_string(self)
+            .unwrap_or_else(|_| "{}".to_string())
+            .into()
     }
 }
 
@@ -177,7 +185,10 @@ mod tests {
 
     #[test]
     fn every_message_is_a_type_and_its_data() {
-        let frame = LiveUpdate::HostForgotten { mac: "18:66:da:11:22:33".into() }.to_frame();
+        let frame = LiveUpdate::HostForgotten {
+            mac: "18:66:da:11:22:33".into(),
+        }
+        .to_frame();
         let value = parse(&frame);
         assert_eq!(value["type"], "host.forgotten");
         assert_eq!(value["data"]["mac"], "18:66:da:11:22:33");
@@ -204,8 +215,16 @@ mod tests {
         // Watching needs no token, so a value — the API token itself, a
         // database password — must never be in a message. The type makes that
         // true: there is nowhere to put one.
-        let value = parse(&LiveUpdate::Config { changed: vec!["PXE_API_TOKEN".into()] }.to_frame());
-        assert_eq!(value["data"], serde_json::json!({ "changed": ["PXE_API_TOKEN"] }));
+        let value = parse(
+            &LiveUpdate::Config {
+                changed: vec!["PXE_API_TOKEN".into()],
+            }
+            .to_frame(),
+        );
+        assert_eq!(
+            value["data"],
+            serde_json::json!({ "changed": ["PXE_API_TOKEN"] })
+        );
     }
 
     #[tokio::test]

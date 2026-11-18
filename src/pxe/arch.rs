@@ -114,47 +114,334 @@ struct Entry {
 /// one. They share a label deliberately: a rule saying `arch = ["x64-uefi"]`
 /// means the machine, not the number its firmware happens to send.
 const REGISTRY: &[Entry] = &[
-    Entry { code: 0, label: "bios", description: "Intel x86PC (BIOS)", family: Family::X86, firmware: Firmware::Bios, http: false },
-    Entry { code: 1, label: "nec-pc98", description: "NEC/PC98", family: Family::X86, firmware: Firmware::Bios, http: false },
-    Entry { code: 2, label: "ia64", description: "EFI Itanium", family: Family::Ia64, firmware: Firmware::Uefi, http: false },
-    Entry { code: 3, label: "alpha", description: "DEC Alpha", family: Family::Alpha, firmware: Firmware::Unknown, http: false },
-    Entry { code: 4, label: "arc-x86", description: "Arc x86", family: Family::X86, firmware: Firmware::Unknown, http: false },
-    Entry { code: 5, label: "lean-client", description: "Intel Lean Client", family: Family::X86, firmware: Firmware::Unknown, http: false },
-    Entry { code: 6, label: "x86-uefi", description: "EFI IA32", family: Family::X86, firmware: Firmware::Uefi, http: false },
-    Entry { code: 7, label: "x64-uefi", description: "EFI BC (x86-64 in practice)", family: Family::X64, firmware: Firmware::Uefi, http: false },
-    Entry { code: 8, label: "xscale-uefi", description: "EFI Xscale", family: Family::Arm32, firmware: Firmware::Uefi, http: false },
-    Entry { code: 9, label: "x64-uefi", description: "EFI x86-64", family: Family::X64, firmware: Firmware::Uefi, http: false },
-    Entry { code: 10, label: "arm32-uefi", description: "EFI ARM32", family: Family::Arm32, firmware: Firmware::Uefi, http: false },
-    Entry { code: 11, label: "arm64-uefi", description: "EFI ARM64", family: Family::Arm64, firmware: Firmware::Uefi, http: false },
-    Entry { code: 12, label: "powerpc-ofw", description: "PowerPC Open Firmware", family: Family::Powerpc, firmware: Firmware::OpenFirmware, http: false },
-    Entry { code: 13, label: "powerpc-epapr", description: "PowerPC ePAPR", family: Family::Powerpc, firmware: Firmware::OpenFirmware, http: false },
-    Entry { code: 14, label: "power-opal", description: "POWER OPAL v3", family: Family::Powerpc, firmware: Firmware::OpenFirmware, http: false },
-    Entry { code: 15, label: "x86-uefi-http", description: "EFI IA32 over HTTP", family: Family::X86, firmware: Firmware::Uefi, http: true },
-    Entry { code: 16, label: "x64-uefi-http", description: "EFI x86-64 over HTTP", family: Family::X64, firmware: Firmware::Uefi, http: true },
-    Entry { code: 17, label: "ebc-http", description: "EFI Byte Code over HTTP", family: Family::Ebc, firmware: Firmware::Uefi, http: true },
-    Entry { code: 18, label: "arm32-uefi-http", description: "EFI ARM32 over HTTP", family: Family::Arm32, firmware: Firmware::Uefi, http: true },
-    Entry { code: 19, label: "arm64-uefi-http", description: "EFI ARM64 over HTTP", family: Family::Arm64, firmware: Firmware::Uefi, http: true },
-    Entry { code: 20, label: "bios-http", description: "PC/AT BIOS over HTTP", family: Family::X86, firmware: Firmware::Bios, http: true },
-    Entry { code: 21, label: "arm32-uboot", description: "ARM 32-bit U-Boot", family: Family::Arm32, firmware: Firmware::UBoot, http: false },
-    Entry { code: 22, label: "arm64-uboot", description: "ARM 64-bit U-Boot", family: Family::Arm64, firmware: Firmware::UBoot, http: false },
-    Entry { code: 23, label: "arm32-uboot-http", description: "ARM 32-bit U-Boot over HTTP", family: Family::Arm32, firmware: Firmware::UBoot, http: true },
-    Entry { code: 24, label: "arm64-uboot-http", description: "ARM 64-bit U-Boot over HTTP", family: Family::Arm64, firmware: Firmware::UBoot, http: true },
-    Entry { code: 25, label: "riscv32-uefi", description: "RISC-V 32-bit UEFI", family: Family::RiscV32, firmware: Firmware::Uefi, http: false },
-    Entry { code: 26, label: "riscv32-uefi-http", description: "RISC-V 32-bit UEFI over HTTP", family: Family::RiscV32, firmware: Firmware::Uefi, http: true },
-    Entry { code: 27, label: "riscv64-uefi", description: "RISC-V 64-bit UEFI", family: Family::RiscV64, firmware: Firmware::Uefi, http: false },
-    Entry { code: 28, label: "riscv64-uefi-http", description: "RISC-V 64-bit UEFI over HTTP", family: Family::RiscV64, firmware: Firmware::Uefi, http: true },
-    Entry { code: 29, label: "riscv128-uefi", description: "RISC-V 128-bit UEFI", family: Family::RiscV128, firmware: Firmware::Uefi, http: false },
-    Entry { code: 30, label: "riscv128-uefi-http", description: "RISC-V 128-bit UEFI over HTTP", family: Family::RiscV128, firmware: Firmware::Uefi, http: true },
-    Entry { code: 31, label: "s390-basic", description: "s390 Basic", family: Family::S390, firmware: Firmware::Unknown, http: false },
-    Entry { code: 32, label: "s390-extended", description: "s390 Extended", family: Family::S390, firmware: Firmware::Unknown, http: false },
-    Entry { code: 33, label: "mips32-uefi", description: "MIPS 32-bit UEFI", family: Family::Mips32, firmware: Firmware::Uefi, http: false },
-    Entry { code: 34, label: "mips64-uefi", description: "MIPS 64-bit UEFI", family: Family::Mips64, firmware: Firmware::Uefi, http: false },
-    Entry { code: 35, label: "sunway32-uefi", description: "Sunway 32-bit UEFI", family: Family::Sunway32, firmware: Firmware::Uefi, http: false },
-    Entry { code: 36, label: "sunway64-uefi", description: "Sunway 64-bit UEFI", family: Family::Sunway64, firmware: Firmware::Uefi, http: false },
-    Entry { code: 37, label: "loongarch32-uefi", description: "LoongArch32 UEFI", family: Family::LoongArch32, firmware: Firmware::Uefi, http: false },
-    Entry { code: 38, label: "loongarch32-uefi-http", description: "LoongArch32 UEFI over HTTP", family: Family::LoongArch32, firmware: Firmware::Uefi, http: true },
-    Entry { code: 39, label: "loongarch64-uefi", description: "LoongArch64 UEFI", family: Family::LoongArch64, firmware: Firmware::Uefi, http: false },
-    Entry { code: 40, label: "loongarch64-uefi-http", description: "LoongArch64 UEFI over HTTP", family: Family::LoongArch64, firmware: Firmware::Uefi, http: true },
+    Entry {
+        code: 0,
+        label: "bios",
+        description: "Intel x86PC (BIOS)",
+        family: Family::X86,
+        firmware: Firmware::Bios,
+        http: false,
+    },
+    Entry {
+        code: 1,
+        label: "nec-pc98",
+        description: "NEC/PC98",
+        family: Family::X86,
+        firmware: Firmware::Bios,
+        http: false,
+    },
+    Entry {
+        code: 2,
+        label: "ia64",
+        description: "EFI Itanium",
+        family: Family::Ia64,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 3,
+        label: "alpha",
+        description: "DEC Alpha",
+        family: Family::Alpha,
+        firmware: Firmware::Unknown,
+        http: false,
+    },
+    Entry {
+        code: 4,
+        label: "arc-x86",
+        description: "Arc x86",
+        family: Family::X86,
+        firmware: Firmware::Unknown,
+        http: false,
+    },
+    Entry {
+        code: 5,
+        label: "lean-client",
+        description: "Intel Lean Client",
+        family: Family::X86,
+        firmware: Firmware::Unknown,
+        http: false,
+    },
+    Entry {
+        code: 6,
+        label: "x86-uefi",
+        description: "EFI IA32",
+        family: Family::X86,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 7,
+        label: "x64-uefi",
+        description: "EFI BC (x86-64 in practice)",
+        family: Family::X64,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 8,
+        label: "xscale-uefi",
+        description: "EFI Xscale",
+        family: Family::Arm32,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 9,
+        label: "x64-uefi",
+        description: "EFI x86-64",
+        family: Family::X64,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 10,
+        label: "arm32-uefi",
+        description: "EFI ARM32",
+        family: Family::Arm32,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 11,
+        label: "arm64-uefi",
+        description: "EFI ARM64",
+        family: Family::Arm64,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 12,
+        label: "powerpc-ofw",
+        description: "PowerPC Open Firmware",
+        family: Family::Powerpc,
+        firmware: Firmware::OpenFirmware,
+        http: false,
+    },
+    Entry {
+        code: 13,
+        label: "powerpc-epapr",
+        description: "PowerPC ePAPR",
+        family: Family::Powerpc,
+        firmware: Firmware::OpenFirmware,
+        http: false,
+    },
+    Entry {
+        code: 14,
+        label: "power-opal",
+        description: "POWER OPAL v3",
+        family: Family::Powerpc,
+        firmware: Firmware::OpenFirmware,
+        http: false,
+    },
+    Entry {
+        code: 15,
+        label: "x86-uefi-http",
+        description: "EFI IA32 over HTTP",
+        family: Family::X86,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 16,
+        label: "x64-uefi-http",
+        description: "EFI x86-64 over HTTP",
+        family: Family::X64,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 17,
+        label: "ebc-http",
+        description: "EFI Byte Code over HTTP",
+        family: Family::Ebc,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 18,
+        label: "arm32-uefi-http",
+        description: "EFI ARM32 over HTTP",
+        family: Family::Arm32,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 19,
+        label: "arm64-uefi-http",
+        description: "EFI ARM64 over HTTP",
+        family: Family::Arm64,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 20,
+        label: "bios-http",
+        description: "PC/AT BIOS over HTTP",
+        family: Family::X86,
+        firmware: Firmware::Bios,
+        http: true,
+    },
+    Entry {
+        code: 21,
+        label: "arm32-uboot",
+        description: "ARM 32-bit U-Boot",
+        family: Family::Arm32,
+        firmware: Firmware::UBoot,
+        http: false,
+    },
+    Entry {
+        code: 22,
+        label: "arm64-uboot",
+        description: "ARM 64-bit U-Boot",
+        family: Family::Arm64,
+        firmware: Firmware::UBoot,
+        http: false,
+    },
+    Entry {
+        code: 23,
+        label: "arm32-uboot-http",
+        description: "ARM 32-bit U-Boot over HTTP",
+        family: Family::Arm32,
+        firmware: Firmware::UBoot,
+        http: true,
+    },
+    Entry {
+        code: 24,
+        label: "arm64-uboot-http",
+        description: "ARM 64-bit U-Boot over HTTP",
+        family: Family::Arm64,
+        firmware: Firmware::UBoot,
+        http: true,
+    },
+    Entry {
+        code: 25,
+        label: "riscv32-uefi",
+        description: "RISC-V 32-bit UEFI",
+        family: Family::RiscV32,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 26,
+        label: "riscv32-uefi-http",
+        description: "RISC-V 32-bit UEFI over HTTP",
+        family: Family::RiscV32,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 27,
+        label: "riscv64-uefi",
+        description: "RISC-V 64-bit UEFI",
+        family: Family::RiscV64,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 28,
+        label: "riscv64-uefi-http",
+        description: "RISC-V 64-bit UEFI over HTTP",
+        family: Family::RiscV64,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 29,
+        label: "riscv128-uefi",
+        description: "RISC-V 128-bit UEFI",
+        family: Family::RiscV128,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 30,
+        label: "riscv128-uefi-http",
+        description: "RISC-V 128-bit UEFI over HTTP",
+        family: Family::RiscV128,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 31,
+        label: "s390-basic",
+        description: "s390 Basic",
+        family: Family::S390,
+        firmware: Firmware::Unknown,
+        http: false,
+    },
+    Entry {
+        code: 32,
+        label: "s390-extended",
+        description: "s390 Extended",
+        family: Family::S390,
+        firmware: Firmware::Unknown,
+        http: false,
+    },
+    Entry {
+        code: 33,
+        label: "mips32-uefi",
+        description: "MIPS 32-bit UEFI",
+        family: Family::Mips32,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 34,
+        label: "mips64-uefi",
+        description: "MIPS 64-bit UEFI",
+        family: Family::Mips64,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 35,
+        label: "sunway32-uefi",
+        description: "Sunway 32-bit UEFI",
+        family: Family::Sunway32,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 36,
+        label: "sunway64-uefi",
+        description: "Sunway 64-bit UEFI",
+        family: Family::Sunway64,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 37,
+        label: "loongarch32-uefi",
+        description: "LoongArch32 UEFI",
+        family: Family::LoongArch32,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 38,
+        label: "loongarch32-uefi-http",
+        description: "LoongArch32 UEFI over HTTP",
+        family: Family::LoongArch32,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
+    Entry {
+        code: 39,
+        label: "loongarch64-uefi",
+        description: "LoongArch64 UEFI",
+        family: Family::LoongArch64,
+        firmware: Firmware::Uefi,
+        http: false,
+    },
+    Entry {
+        code: 40,
+        label: "loongarch64-uefi-http",
+        description: "LoongArch64 UEFI over HTTP",
+        family: Family::LoongArch64,
+        firmware: Firmware::Uefi,
+        http: true,
+    },
 ];
 
 /// A client architecture, known or not.
@@ -185,7 +472,10 @@ impl ClientArch {
     /// The name a rule file uses. An unregistered architecture gets
     /// `arch-<code>`, which is still matchable — nothing is silently lost.
     pub fn label(&self) -> String {
-        self.entry().map_or_else(|| format!("arch-{}", self.0), |entry| entry.label.to_string())
+        self.entry().map_or_else(
+            || format!("arch-{}", self.0),
+            |entry| entry.label.to_string(),
+        )
     }
 
     pub fn description(&self) -> String {
@@ -200,7 +490,8 @@ impl ClientArch {
     }
 
     pub fn firmware(&self) -> Firmware {
-        self.entry().map_or(Firmware::Unknown, |entry| entry.firmware)
+        self.entry()
+            .map_or(Firmware::Unknown, |entry| entry.firmware)
     }
 
     /// Whether this firmware fetches its boot file over HTTP.
@@ -274,7 +565,10 @@ pub fn parse_arch(input: &str) -> Option<ClientArch> {
     if let Ok(code) = input.parse::<u16>() {
         return Some(ClientArch::from_code(code));
     }
-    REGISTRY.iter().find(|entry| entry.label == input).map(|entry| ClientArch(entry.code))
+    REGISTRY
+        .iter()
+        .find(|entry| entry.label == input)
+        .map(|entry| ClientArch(entry.code))
 }
 
 #[cfg(test)]
@@ -315,8 +609,14 @@ mod tests {
         let future = ClientArch::from_code(9000);
         assert!(!future.is_known());
         assert_eq!(future.label(), "arch-9000");
-        assert!(future.matches_name("9000"), "a rule can still name it by number");
-        assert!(!future.matches_name("bios"), "and it is not quietly treated as x86");
+        assert!(
+            future.matches_name("9000"),
+            "a rule can still name it by number"
+        );
+        assert!(
+            !future.matches_name("bios"),
+            "and it is not quietly treated as x86"
+        );
     }
 
     #[test]
@@ -343,6 +643,10 @@ mod tests {
         let before = codes.len();
         codes.sort_unstable();
         codes.dedup();
-        assert_eq!(codes.len(), before, "two rows claim the same architecture id");
+        assert_eq!(
+            codes.len(),
+            before,
+            "two rows claim the same architecture id"
+        );
     }
 }

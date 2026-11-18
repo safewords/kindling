@@ -48,7 +48,9 @@ struct Report {
 
 impl Report {
     fn new() -> Self {
-        Self { findings: Vec::new() }
+        Self {
+            findings: Vec::new(),
+        }
     }
 
     fn note(&mut self, verdict: Verdict, check: impl Into<String>, detail: impl Into<String>) {
@@ -68,9 +70,17 @@ impl Report {
     }
 
     fn worst(&self) -> Verdict {
-        if self.findings.iter().any(|(verdict, _, _)| *verdict == Verdict::Fail) {
+        if self
+            .findings
+            .iter()
+            .any(|(verdict, _, _)| *verdict == Verdict::Fail)
+        {
             Verdict::Fail
-        } else if self.findings.iter().any(|(verdict, _, _)| *verdict == Verdict::Warn) {
+        } else if self
+            .findings
+            .iter()
+            .any(|(verdict, _, _)| *verdict == Verdict::Warn)
+        {
             Verdict::Warn
         } else {
             Verdict::Ok
@@ -130,11 +140,18 @@ impl Command for DoctorCommand {
                 ),
             ),
             None => report.ok(
-                format!("policy: {} rule(s), {} profile(s)", rules.rules().len(), rules.profiles().len()),
+                format!(
+                    "policy: {} rule(s), {} profile(s)",
+                    rules.rules().len(),
+                    rules.profiles().len()
+                ),
                 format!(
                     "from the {}{}",
                     rules.source(),
-                    store.revision().map(|r| format!(", revision {r}")).unwrap_or_default()
+                    store
+                        .revision()
+                        .map(|r| format!(", revision {r}"))
+                        .unwrap_or_default()
                 ),
             ),
         }
@@ -176,7 +193,11 @@ impl Command for DoctorCommand {
 
         for (file, arches) in by_file {
             let path = root.join(file);
-            let listed = arches.iter().map(|a| a.as_str()).collect::<Vec<_>>().join(", ");
+            let listed = arches
+                .iter()
+                .map(|a| a.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
 
             if path.is_file() {
                 report.ok(format!("loader for {listed}: {file}"), "");
@@ -220,7 +241,10 @@ impl Command for DoctorCommand {
         }
 
         for (name, profile) in rules.profiles() {
-            if let Some(file) = profile.bootfile_for("default").or_else(|| profile.bootfile_for("bios")) {
+            if let Some(file) = profile
+                .bootfile_for("default")
+                .or_else(|| profile.bootfile_for("bios"))
+            {
                 if !file.starts_with("http") && !root.join(file).is_file() {
                     report.fail(
                         format!("profile `{name}` names a boot file that is not there: {file}"),
@@ -262,7 +286,10 @@ impl Command for DoctorCommand {
                 "which is this machine talking to itself. Set PXE_SERVER_IP to an address the \
                  machines can reach.",
             ),
-            Ok(address) => report.ok(format!("machines are told to come back to {address}"), base.clone()),
+            Ok(address) => report.ok(
+                format!("machines are told to come back to {address}"),
+                base.clone(),
+            ),
             Err(_) => report.fail(
                 format!("PXE_SERVER_IP is `{server_ip}`, which is not an address"),
                 "",
@@ -299,7 +326,8 @@ impl Command for DoctorCommand {
                 .iter()
                 .filter(|(arch, from, name)| {
                     *arch == build.arch
-                        && ipxe::installed_state(&build.dir.join(from), &root.join(name)) == ipxe::Installed::Same
+                        && ipxe::installed_state(&build.dir.join(from), &root.join(name))
+                            == ipxe::Installed::Same
                 })
                 .map(|(_, _, name)| *name)
                 .collect();
@@ -332,7 +360,11 @@ impl Command for DoctorCommand {
             }
         }
 
-        if settings.get_or(PXE_API_TOKEN, String::new()).trim().is_empty() {
+        if settings
+            .get_or(PXE_API_TOKEN, String::new())
+            .trim()
+            .is_empty()
+        {
             report.warn(
                 "PXE_API_TOKEN is not set",
                 "The endpoints that pin machines and reload the policy are closed. Reading is \
@@ -355,7 +387,12 @@ impl Command for DoctorCommand {
                 }
             }
             if tftp {
-                check_port(&mut report, &bind, settings.get_or(PXE_TFTP_PORT, 69u16), "TFTP");
+                check_port(
+                    &mut report,
+                    &bind,
+                    settings.get_or(PXE_TFTP_PORT, 69u16),
+                    "TFTP",
+                );
             }
         }
 
@@ -419,7 +456,10 @@ fn check_port(report: &mut Report, bind: &str, port: u16, what: &str) {
             format!("port {port} is already taken, for {what}"),
             "Another boot server — possibly another copy of this one — is already on it.",
         ),
-        Err(e) => report.fail(format!("port {port} cannot be bound, for {what}"), e.to_string()),
+        Err(e) => report.fail(
+            format!("port {port} cannot be bound, for {what}"),
+            e.to_string(),
+        ),
     }
 }
 
@@ -437,8 +477,7 @@ mod tests {
         assert_eq!(path, root.join("images").join("vmlinuz"));
 
         // Written out in full, which is the other way people write it.
-        let (_, path) =
-            local_path("http://10.0.0.2:8080/boot/images/vmlinuz", root, base).unwrap();
+        let (_, path) = local_path("http://10.0.0.2:8080/boot/images/vmlinuz", root, base).unwrap();
         assert_eq!(path, root.join("images").join("vmlinuz"));
 
         // And with the spaces the placeholder syntax allows.
@@ -450,8 +489,18 @@ mod tests {
         // A mirror or a bucket is somebody else's file, and warning about one
         // this server cannot see would be noise on every run.
         let root = Path::new("/srv/tftp");
-        assert_eq!(local_path("https://mirror.example/vmlinuz", root, "http://10.0.0.2:8080"), None);
-        assert_eq!(local_path("/boot/vmlinuz", root, "http://10.0.0.2:8080"), None);
+        assert_eq!(
+            local_path(
+                "https://mirror.example/vmlinuz",
+                root,
+                "http://10.0.0.2:8080"
+            ),
+            None
+        );
+        assert_eq!(
+            local_path("/boot/vmlinuz", root, "http://10.0.0.2:8080"),
+            None
+        );
     }
 
     #[test]
@@ -459,7 +508,10 @@ mod tests {
         // It expands differently per machine, so there is no one file to check
         // and a warning would be about a path that is correct.
         let root = Path::new("/srv/tftp");
-        assert_eq!(local_path("{{boot}}/images/{{arch}}/vmlinuz", root, "http://x"), None);
+        assert_eq!(
+            local_path("{{boot}}/images/{{arch}}/vmlinuz", root, "http://x"),
+            None
+        );
     }
 
     #[test]
@@ -472,6 +524,10 @@ mod tests {
         assert_eq!(report.worst(), Verdict::Warn);
 
         report.fail("no", "");
-        assert_eq!(report.worst(), Verdict::Fail, "a failure outranks any number of warnings");
+        assert_eq!(
+            report.worst(),
+            Verdict::Fail,
+            "a failure outranks any number of warnings"
+        );
     }
 }

@@ -19,7 +19,10 @@ impl FormRequest for SetProfileRequest {
         // The length bound is not decoration: the name goes into a script and
         // into a log line, and an unbounded string from an API client belongs
         // in neither.
-        vec![field("profile", [Rule::Required, Rule::String, Rule::Between(1.0, 64.0)])]
+        vec![field(
+            "profile",
+            [Rule::Required, Rule::String, Rule::Between(1.0, 64.0)],
+        )]
     }
 
     // Authorisation is the token middleware's job, not this contract's. Saying
@@ -30,7 +33,10 @@ impl FormRequest for SetProfileRequest {
     }
 
     fn messages() -> Vec<(&'static str, &'static str)> {
-        vec![("profile.required", "Name the profile this machine should boot.")]
+        vec![(
+            "profile.required",
+            "Name the profile this machine should boot.",
+        )]
     }
 }
 
@@ -45,10 +51,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_profile_name_becomes_a_typed_payload() {
-        let validated =
-            SetProfileRequest::validate_request(&post(serde_json::json!({ "profile": "ubuntu-2404" })))
-                .await
-                .expect("valid");
+        let validated = SetProfileRequest::validate_request(&post(
+            serde_json::json!({ "profile": "ubuntu-2404" }),
+        ))
+        .await
+        .expect("valid");
         assert_eq!(validated.profile, "ubuntu-2404");
     }
 
@@ -56,18 +63,24 @@ mod tests {
     async fn an_empty_body_is_refused_with_a_sentence_a_human_wrote() {
         // The summary is the framework's; the per-field text is ours, and it
         // is the part an API client shows somebody.
-        let error =
-            SetProfileRequest::validate_request(&post(serde_json::json!({}))).await.unwrap_err();
+        let error = SetProfileRequest::validate_request(&post(serde_json::json!({})))
+            .await
+            .unwrap_err();
 
-        let details = error.details().expect("a validation failure carries its fields").to_string();
+        let details = error
+            .details()
+            .expect("a validation failure carries its fields")
+            .to_string();
         assert!(details.contains("Name the profile"), "{details}");
     }
 
     #[tokio::test]
     async fn a_name_nobody_could_have_meant_is_refused() {
         let long = "x".repeat(200);
-        assert!(SetProfileRequest::validate_request(&post(serde_json::json!({ "profile": long })))
-            .await
-            .is_err());
+        assert!(
+            SetProfileRequest::validate_request(&post(serde_json::json!({ "profile": long })))
+                .await
+                .is_err()
+        );
     }
 }

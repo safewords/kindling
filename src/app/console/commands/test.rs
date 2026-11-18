@@ -146,7 +146,10 @@ impl Command for TestCommand {
         }
 
         println!("\nDecision");
-        println!("  profile  {}", decision.profile.as_deref().unwrap_or("none"));
+        println!(
+            "  profile  {}",
+            decision.profile.as_deref().unwrap_or("none")
+        );
         println!("  from     {}", decision.source.as_str());
         println!("  because  {}", decision.reason);
 
@@ -198,7 +201,11 @@ impl Command for TestCommand {
 /// "no match (arch)" sends them to the line.
 fn describe(outcome: &TraceOutcome) -> String {
     match outcome {
-        TraceOutcome::Matched { profile, superseded, stopped } => {
+        TraceOutcome::Matched {
+            profile,
+            superseded,
+            stopped,
+        } => {
             let mut text = match profile {
                 Some(profile) => format!("matched → {profile}"),
                 None => "matched (no profile)".to_string(),
@@ -211,7 +218,9 @@ fn describe(outcome: &TraceOutcome) -> String {
             }
             text
         }
-        TraceOutcome::NoMatch { field, detail } if detail.is_empty() => format!("no match ({field})"),
+        TraceOutcome::NoMatch { field, detail } if detail.is_empty() => {
+            format!("no match ({field})")
+        }
         TraceOutcome::NoMatch { field, detail } => format!("no match ({field}: {detail})"),
         TraceOutcome::Excluded => "matched `when`, excluded by `unless`".to_string(),
         TraceOutcome::Disabled => "disabled".to_string(),
@@ -246,7 +255,11 @@ mod tests {
         );
 
         assert_eq!(
-            describe(&TraceOutcome::Matched { profile: None, superseded: false, stopped: false }),
+            describe(&TraceOutcome::Matched {
+                profile: None,
+                superseded: false,
+                stopped: false
+            }),
             "matched (no profile)"
         );
 

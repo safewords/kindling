@@ -65,7 +65,10 @@ fn selected_arches(raw: Option<&str>) -> std::result::Result<Vec<&'static str>, 
     let mut chosen = Vec::new();
     for name in raw.split(',').filter(|name| !name.trim().is_empty()) {
         let arch = normalise_arch(name).ok_or_else(|| {
-            format!("`{name}` is not an architecture this builds (expected one of: {})", ARCHES.join(", "))
+            format!(
+                "`{name}` is not an architecture this builds (expected one of: {})",
+                ARCHES.join(", ")
+            )
         })?;
         if !chosen.contains(&arch) {
             chosen.push(arch);
@@ -93,7 +96,10 @@ impl BuildInfo {
     }
 
     pub(crate) fn get(&self, key: &str) -> Option<&str> {
-        self.values.get(key).map(String::as_str).filter(|value| !value.is_empty())
+        self.values
+            .get(key)
+            .map(String::as_str)
+            .filter(|value| !value.is_empty())
     }
 
     /// The server URL compiled in, or `None` for a build that finds it
@@ -103,7 +109,9 @@ impl BuildInfo {
     }
 
     fn commit_short(&self) -> &str {
-        self.get("commit").map(|commit| &commit[..commit.len().min(12)]).unwrap_or("?")
+        self.get("commit")
+            .map(|commit| &commit[..commit.len().min(12)])
+            .unwrap_or("?")
     }
 }
 
@@ -124,7 +132,9 @@ pub(crate) fn builds(root: &Path) -> Vec<Build> {
         .map(|arch| (*arch, root.join(BUILD_DIR).join(arch)))
         .filter(|(_, dir)| dir.is_dir())
         .map(|(arch, dir)| {
-            let info = std::fs::read_to_string(dir.join("BUILD-INFO")).ok().map(|text| BuildInfo::parse(&text));
+            let info = std::fs::read_to_string(dir.join("BUILD-INFO"))
+                .ok()
+                .map(|text| BuildInfo::parse(&text));
             Build { arch, dir, info }
         })
         .collect()
@@ -191,7 +201,10 @@ pub(crate) fn plan_install(
     for arch in arches {
         let dir = root.join(BUILD_DIR).join(arch);
         let wanted: Vec<_> = INSTALLS.iter().filter(|(a, _, _)| a == arch).collect();
-        let missing: Vec<_> = wanted.iter().filter(|(_, file, _)| !dir.join(file).is_file()).collect();
+        let missing: Vec<_> = wanted
+            .iter()
+            .filter(|(_, file, _)| !dir.join(file).is_file())
+            .collect();
 
         if !missing.is_empty() {
             if explicit {
@@ -207,7 +220,12 @@ pub(crate) fn plan_install(
             let from = dir.join(file);
             let to = root.join(name);
             let state = installed_state(&from, &to);
-            steps.push(Step { arch, from, to, state });
+            steps.push(Step {
+                arch,
+                from,
+                to,
+                state,
+            });
         }
     }
     Ok(steps)
@@ -257,7 +275,12 @@ enum EngineState {
 
 fn engine_state(engine: &str) -> EngineState {
     let quietly = |args: &[&str]| {
-        Process::new(engine).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status()
+        Process::new(engine)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
     };
     match quietly(&["--version"]) {
         Err(e) if e.kind() == ErrorKind::NotFound => EngineState::Missing,
@@ -277,12 +300,22 @@ fn choose_engine(asked: Option<&str>) -> std::result::Result<String, String> {
         None => vec!["docker", "podman"],
     };
 
-    let states: Vec<_> = candidates.iter().map(|engine| (*engine, engine_state(engine))).collect();
-    if let Some((engine, _)) = states.iter().find(|(_, state)| *state == EngineState::Running) {
+    let states: Vec<_> = candidates
+        .iter()
+        .map(|engine| (*engine, engine_state(engine)))
+        .collect();
+    if let Some((engine, _)) = states
+        .iter()
+        .find(|(_, state)| *state == EngineState::Running)
+    {
         return Ok(engine.to_string());
     }
 
-    let stopped: Vec<_> = states.iter().filter(|(_, s)| *s == EngineState::Stopped).map(|(e, _)| *e).collect();
+    let stopped: Vec<_> = states
+        .iter()
+        .filter(|(_, s)| *s == EngineState::Stopped)
+        .map(|(e, _)| *e)
+        .collect();
     if !stopped.is_empty() {
         return Err(format!(
             "{} is installed but not running. Start Docker Desktop, or `podman machine start`, and try \
@@ -316,7 +349,9 @@ fn absolute(path: &Path) -> std::io::Result<PathBuf> {
 fn valid_base(base: &str) -> bool {
     (base.starts_with("http://") || base.starts_with("https://"))
         && base.len() > "https://".len()
-        && !base.chars().any(|c| c.is_whitespace() || "$#&|".contains(c))
+        && !base
+            .chars()
+            .any(|c| c.is_whitespace() || "$#&|".contains(c))
 }
 
 #[derive(Debug, Default)]
@@ -409,7 +444,8 @@ fn build(root: &Path, arches: &[&str], embed: &str, engine: Option<&str>) -> Res
     };
 
     let out = root.join(BUILD_DIR);
-    std::fs::create_dir_all(&out).map_err(|e| Error::internal(format!("{}: {e}", out.display())))?;
+    std::fs::create_dir_all(&out)
+        .map_err(|e| Error::internal(format!("{}: {e}", out.display())))?;
     let (context, out) = match (absolute(&context), absolute(&out)) {
         (Ok(context), Ok(out)) => (context, out),
         _ => {
@@ -419,8 +455,14 @@ fn build(root: &Path, arches: &[&str], embed: &str, engine: Option<&str>) -> Res
     };
 
     match embed {
-        "" => println!("Building iPXE ({}) with no server compiled in, using {engine}.", arches.join(", ")),
-        embed => println!("Building iPXE ({}) for {embed}, using {engine}.", arches.join(", ")),
+        "" => println!(
+            "Building iPXE ({}) with no server compiled in, using {engine}.",
+            arches.join(", ")
+        ),
+        embed => println!(
+            "Building iPXE ({}) for {embed}, using {engine}.",
+            arches.join(", ")
+        ),
     }
 
     // A container *build* that exports its own output, not a `run` with the
@@ -428,12 +470,22 @@ fn build(root: &Path, arches: &[&str], embed: &str, engine: Option<&str>) -> Res
     // that is not listed under File Sharing, nothing comes back owned by root,
     // and it works against a remote engine. The context is only `ipxe/`.
     let built = Process::new(&engine)
-        .args(["build", "--platform", "linux/amd64", "--target", "output", "-f"])
+        .args([
+            "build",
+            "--platform",
+            "linux/amd64",
+            "--target",
+            "output",
+            "-f",
+        ])
         .arg(context.join("Containerfile"))
         .arg("--build-arg")
         .arg(format!("ARCHES={}", arches.join(",")))
         .arg("--build-arg")
-        .arg(format!("EMBED_BASE={}", if embed.is_empty() { "none" } else { embed }))
+        .arg(format!(
+            "EMBED_BASE={}",
+            if embed.is_empty() { "none" } else { embed }
+        ))
         .arg("--output")
         .arg(format!("type=local,dest={}", out.display()))
         .arg(&context)
@@ -450,7 +502,12 @@ fn build(root: &Path, arches: &[&str], embed: &str, engine: Option<&str>) -> Res
     Ok(exit::SUCCESS)
 }
 
-fn install_command(root: &Path, base: &str, arches: &[&'static str], args: &Arguments) -> Result<i32> {
+fn install_command(
+    root: &Path,
+    base: &str,
+    arches: &[&'static str],
+    args: &Arguments,
+) -> Result<i32> {
     let explicit = args.option("arch").is_some_and(|arch| arch.trim() != "all");
     let steps = match plan_install(root, arches, explicit) {
         Ok(steps) if steps.is_empty() => {
@@ -467,7 +524,10 @@ fn install_command(root: &Path, base: &str, arches: &[&'static str], args: &Argu
     // A loader that comes back to a different server is a rack that boots
     // nothing — or boots somebody else's policy. Refused unless it is meant.
     let mut wrong_server = false;
-    for build in builds(root).iter().filter(|build| steps.iter().any(|step| step.arch == build.arch)) {
+    for build in builds(root)
+        .iter()
+        .filter(|build| steps.iter().any(|step| step.arch == build.arch))
+    {
         let built = build.info.as_ref().and_then(BuildInfo::embed_base);
         if check_base(built, base) == BaseCheck::Differs {
             wrong_server = true;
@@ -550,18 +610,25 @@ fn status(root: &Path, base: &str) {
             },
         };
 
-        let files: Vec<&str> = info.get("files").map(|files| files.split_whitespace().collect()).unwrap_or_default();
+        let files: Vec<&str> = info
+            .get("files")
+            .map(|files| files.split_whitespace().collect())
+            .unwrap_or_default();
         for file in files {
             let built = build.dir.join(file);
-            let size = std::fs::metadata(&built).map(|m| format!("{} KiB", m.len().div_ceil(1024))).unwrap_or_default();
+            let size = std::fs::metadata(&built)
+                .map(|m| format!("{} KiB", m.len().div_ceil(1024)))
+                .unwrap_or_default();
             let installed = INSTALLS
                 .iter()
                 .find(|(arch, from, _)| *arch == build.arch && *from == file)
-                .map(|(_, _, name)| match installed_state(&built, &root.join(name)) {
-                    Installed::Same => format!("installed as {name}"),
-                    Installed::Other => format!("not installed ({name} is another build)"),
-                    Installed::Absent => format!("not installed ({name} absent)"),
-                })
+                .map(
+                    |(_, _, name)| match installed_state(&built, &root.join(name)) {
+                        Installed::Same => format!("installed as {name}"),
+                        Installed::Other => format!("not installed ({name} is another build)"),
+                        Installed::Absent => format!("not installed ({name} absent)"),
+                    },
+                )
                 .unwrap_or_else(|| "build only".to_string());
 
             rows.push(vec![
@@ -585,7 +652,10 @@ fn status(root: &Path, base: &str) {
         }
     }
 
-    io::table(&["BUILD", "SIZE", "UPSTREAM", "SERVER", "BUILT", "IN SERVICE"], &rows);
+    io::table(
+        &["BUILD", "SIZE", "UPSTREAM", "SERVER", "BUILT", "IN SERVICE"],
+        &rows,
+    );
 }
 
 #[cfg(test)]
@@ -620,7 +690,10 @@ mod tests {
     /// `key=value` pairs from the query string of the first line with
     /// `/boot.ipxe?` in it.
     fn query(script: &str) -> BTreeMap<String, String> {
-        let line = script.lines().find(|line| line.contains("/boot.ipxe?")).expect("a line asking for /boot.ipxe");
+        let line = script
+            .lines()
+            .find(|line| line.contains("/boot.ipxe?"))
+            .expect("a line asking for /boot.ipxe");
         let query = line.split_once("/boot.ipxe?").unwrap().1;
         let query = query.split_whitespace().next().unwrap();
         query
@@ -635,16 +708,26 @@ mod tests {
         // The point of asking directly is skipping the reflector's round trip.
         // Skip a parameter and a rule on it silently stops matching for every
         // machine on this build — so the two are held to each other here.
-        let reflector = query(&crate::app::http::controllers::boot_controller::reflector("http://x"));
+        let reflector = query(&crate::app::http::controllers::boot_controller::reflector(
+            "http://x",
+        ));
         let embedded = query(EMBED);
 
         for (key, value) in &reflector {
-            let ours = embedded.get(key).unwrap_or_else(|| panic!("embed.ipxe does not send `{key}`"));
+            let ours = embedded
+                .get(key)
+                .unwrap_or_else(|| panic!("embed.ipxe does not send `{key}`"));
             if key == "mac" {
                 // The interface that actually got an address, not always net0.
-                assert!(ours.ends_with("/mac:hexhyp}"), "mac must be hex-hyphen like the reflector's: {ours}");
+                assert!(
+                    ours.ends_with("/mac:hexhyp}"),
+                    "mac must be hex-hyphen like the reflector's: {ours}"
+                );
             } else {
-                assert_eq!(ours, value, "`{key}` is spelled differently from the reflector");
+                assert_eq!(
+                    ours, value,
+                    "`{key}` is spelled differently from the reflector"
+                );
             }
         }
     }
@@ -652,13 +735,18 @@ mod tests {
     #[test]
     fn the_embedded_script_identifies_itself_the_way_the_server_checks() {
         assert!(
-            EMBED.lines().any(|line| line.trim() == format!("set user-class {OWN_IPXE_USER_CLASS}")),
+            EMBED
+                .lines()
+                .any(|line| line.trim() == format!("set user-class {OWN_IPXE_USER_CLASS}")),
             "embed.ipxe must send option 77 as `{OWN_IPXE_USER_CLASS}`"
         );
         // Set before the first DHCP, or the first request goes out as stock.
         let class = EMBED.find("set user-class").unwrap();
         let dhcp = EMBED.find("\ndhcp ").unwrap();
-        assert!(class < dhcp, "the user class is set after DHCP has already run");
+        assert!(
+            class < dhcp,
+            "the user class is set after DHCP has already run"
+        );
     }
 
     #[test]
@@ -681,7 +769,10 @@ mod tests {
             let Some(end) = after.find('@') else { break };
             let marker = &after[..end];
             if !marker.is_empty() && marker.chars().all(|c| c.is_ascii_uppercase() || c == '_') {
-                assert!(BUILD_SH.contains(&format!("@{marker}@")), "build.sh never fills in @{marker}@");
+                assert!(
+                    BUILD_SH.contains(&format!("@{marker}@")),
+                    "build.sh never fills in @{marker}@"
+                );
                 rest = &after[end + 1..];
             } else {
                 rest = after;
@@ -692,9 +783,15 @@ mod tests {
     #[test]
     fn the_shell_build_and_this_command_agree_on_the_architectures() {
         let line = format!("all_arches=\"{}\"", ARCHES.join(" "));
-        assert!(BUILD_SH.contains(&line), "build.sh's architecture list has drifted from ARCHES");
+        assert!(
+            BUILD_SH.contains(&line),
+            "build.sh's architecture list has drifted from ARCHES"
+        );
         for arch in ARCHES {
-            assert!(BUILD_SH.contains(&format!("        {arch})")), "build.sh has no case for {arch}");
+            assert!(
+                BUILD_SH.contains(&format!("        {arch})")),
+                "build.sh has no case for {arch}"
+            );
         }
     }
 
@@ -708,8 +805,13 @@ mod tests {
 
         assert_eq!(selected_arches(None).unwrap(), ARCHES.to_vec());
         assert_eq!(selected_arches(Some("all")).unwrap(), ARCHES.to_vec());
-        assert_eq!(selected_arches(Some("x64-uefi,x86_64-efi,bios")).unwrap(), vec!["x86_64-efi", "bios"]);
-        assert!(selected_arches(Some("bios,sparc")).unwrap_err().contains("sparc"));
+        assert_eq!(
+            selected_arches(Some("x64-uefi,x86_64-efi,bios")).unwrap(),
+            vec!["x86_64-efi", "bios"]
+        );
+        assert!(selected_arches(Some("bios,sparc"))
+            .unwrap_err()
+            .contains("sparc"));
     }
 
     #[test]
@@ -719,21 +821,46 @@ mod tests {
              embed_base=\nfiles=ipxe.efi snponly.efi\n",
         );
         assert_eq!(info.get("product"), Some("kindling iPXE"));
-        assert_eq!(info.embed_base(), None, "empty means found through DHCP, not an empty URL");
+        assert_eq!(
+            info.embed_base(),
+            None,
+            "empty means found through DHCP, not an empty URL"
+        );
         assert_eq!(info.commit_short(), "744cdb451ef2");
 
         // Every key it reads is one build.sh writes.
-        for key in ["files=", "commit=", "embed_base=", "built_at=", "user_class="] {
-            assert!(BUILD_SH.contains(&format!("\n{key}")), "build.sh does not write `{key}`");
+        for key in [
+            "files=",
+            "commit=",
+            "embed_base=",
+            "built_at=",
+            "user_class=",
+        ] {
+            assert!(
+                BUILD_SH.contains(&format!("\n{key}")),
+                "build.sh does not write `{key}`"
+            );
         }
     }
 
     #[test]
     fn a_build_is_checked_against_the_server_it_will_come_back_to() {
-        assert_eq!(check_base(Some("http://10.0.1.109:8080"), "http://10.0.1.109:8080/"), BaseCheck::Matches);
-        assert_eq!(check_base(Some("HTTP://10.0.1.109:8080/"), "http://10.0.1.109:8080"), BaseCheck::Matches);
-        assert_eq!(check_base(None, "http://10.0.1.109:8080"), BaseCheck::Discovers);
-        assert_eq!(check_base(Some("http://10.0.0.2:8080"), "http://10.0.1.109:8080"), BaseCheck::Differs);
+        assert_eq!(
+            check_base(Some("http://10.0.1.109:8080"), "http://10.0.1.109:8080/"),
+            BaseCheck::Matches
+        );
+        assert_eq!(
+            check_base(Some("HTTP://10.0.1.109:8080/"), "http://10.0.1.109:8080"),
+            BaseCheck::Matches
+        );
+        assert_eq!(
+            check_base(None, "http://10.0.1.109:8080"),
+            BaseCheck::Discovers
+        );
+        assert_eq!(
+            check_base(Some("http://10.0.0.2:8080"), "http://10.0.1.109:8080"),
+            BaseCheck::Differs
+        );
     }
 
     #[test]
@@ -742,7 +869,10 @@ mod tests {
         assert!(valid_base("https://boot.example.internal"));
         assert!(!valid_base("10.0.1.109:8080"), "no scheme");
         assert!(!valid_base("tftp://10.0.1.109"));
-        assert!(!valid_base("http://x/a b"), "a space splits the iPXE command");
+        assert!(
+            !valid_base("http://x/a b"),
+            "a space splits the iPXE command"
+        );
         assert!(!valid_base("http://x/${net0/ip}"), "iPXE would expand it");
         assert!(!valid_base("http://"));
     }
@@ -750,27 +880,52 @@ mod tests {
     #[test]
     fn installing_backs_up_what_it_replaces_and_skips_what_is_already_there() {
         let root = scratch("install");
-        built(&root, "x86_64-efi", &[("ipxe.efi", b"new efi"), ("snponly.efi", b"new snp")], "");
+        built(
+            &root,
+            "x86_64-efi",
+            &[("ipxe.efi", b"new efi"), ("snponly.efi", b"new snp")],
+            "",
+        );
         built(&root, "bios", &[("undionly.kpxe", b"new kpxe")], "");
         std::fs::write(root.join("ipxe.efi"), b"stock efi").unwrap();
         std::fs::write(root.join("undionly.kpxe"), b"new kpxe").unwrap();
 
         let steps = plan_install(&root, &ARCHES, false).unwrap();
-        let state = |name: &str| steps.iter().find(|s| s.to == root.join(name)).map(|s| s.state);
+        let state = |name: &str| {
+            steps
+                .iter()
+                .find(|s| s.to == root.join(name))
+                .map(|s| s.state)
+        };
         assert_eq!(state("ipxe.efi"), Some(Installed::Other));
         assert_eq!(state("snponly.efi"), Some(Installed::Absent));
         assert_eq!(state("undionly.kpxe"), Some(Installed::Same));
-        assert_eq!(state("ipxe32.efi"), None, "never built, so not part of an --arch=all install");
+        assert_eq!(
+            state("ipxe32.efi"),
+            None,
+            "never built, so not part of an --arch=all install"
+        );
 
         let backups = install(&root, &steps, "stamp").unwrap();
-        assert_eq!(backups, vec![root.join(BACKUP_DIR).join("stamp").join("ipxe.efi")]);
+        assert_eq!(
+            backups,
+            vec![root.join(BACKUP_DIR).join("stamp").join("ipxe.efi")]
+        );
         assert_eq!(std::fs::read(&backups[0]).unwrap(), b"stock efi");
         assert_eq!(std::fs::read(root.join("ipxe.efi")).unwrap(), b"new efi");
         assert_eq!(std::fs::read(root.join("snponly.efi")).unwrap(), b"new snp");
-        assert!(!root.join("ipxe.efi.installing").exists(), "no staging file is left behind");
+        assert!(
+            !root.join("ipxe.efi.installing").exists(),
+            "no staging file is left behind"
+        );
 
         // The i386 EFI build is installed under the name the policy expects.
-        built(&root, "i386-efi", &[("ipxe.efi", b"ia32"), ("snponly.efi", b"ia32 snp")], "");
+        built(
+            &root,
+            "i386-efi",
+            &[("ipxe.efi", b"ia32"), ("snponly.efi", b"ia32 snp")],
+            "",
+        );
         let steps = plan_install(&root, &["i386-efi"], true).unwrap();
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].to, root.join("ipxe32.efi"));
@@ -790,14 +945,22 @@ mod tests {
     #[test]
     fn builds_are_found_with_or_without_their_build_info() {
         let root = scratch("found");
-        built(&root, "arm64-efi", &[("ipxe.efi", b"a")], "http://10.0.1.109:8080");
+        built(
+            &root,
+            "arm64-efi",
+            &[("ipxe.efi", b"a")],
+            "http://10.0.1.109:8080",
+        );
         std::fs::create_dir_all(root.join(BUILD_DIR).join("bios")).unwrap();
 
         let found = builds(&root);
         let arches: Vec<_> = found.iter().map(|b| b.arch).collect();
         assert_eq!(arches, vec!["bios", "arm64-efi"]);
         assert!(found[0].info.is_none());
-        assert_eq!(found[1].info.as_ref().unwrap().embed_base(), Some("http://10.0.1.109:8080"));
+        assert_eq!(
+            found[1].info.as_ref().unwrap().embed_base(),
+            Some("http://10.0.1.109:8080")
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

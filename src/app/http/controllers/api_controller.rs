@@ -28,7 +28,10 @@ pub async fn health() -> Result<Response> {
     // otherwise would page somebody for the wrong thing.
     let (inventory, inventory_error) = match hosts.count().await {
         Ok(count) => (serde_json::json!({ "status": "ok", "hosts": count }), None),
-        Err(e) => (serde_json::json!({ "status": "unreachable" }), Some(e.message().to_string())),
+        Err(e) => (
+            serde_json::json!({ "status": "unreachable" }),
+            Some(e.message().to_string()),
+        ),
     };
 
     Ok(Response::json(&serde_json::json!({
@@ -54,12 +57,23 @@ pub async fn health() -> Result<Response> {
 pub async fn hosts(request: Req) -> Result<Response> {
     let hosts = resolve::<HostRepository>()?;
 
-    let page = request.input("page").and_then(|p| p.parse().ok()).unwrap_or(1);
-    let per_page: u64 =
-        request.input("per_page").and_then(|p| p.parse().ok()).unwrap_or(50).clamp(1, 500);
+    let page = request
+        .input("page")
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(1);
+    let per_page: u64 = request
+        .input("per_page")
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(50)
+        .clamp(1, 500);
 
     let found = hosts
-        .page(page, per_page, request.input("search").as_deref(), request.input("tag").as_deref())
+        .page(
+            page,
+            per_page,
+            request.input("search").as_deref(),
+            request.input("tag").as_deref(),
+        )
         .await?;
 
     Ok(Response::json(&serde_json::json!({
@@ -107,7 +121,9 @@ pub async fn unpin(request: Req) -> Result<Response> {
     if !hosts.pin(mac, None).await? {
         return Err(unknown_host(mac));
     }
-    Ok(Response::json(&serde_json::json!({ "mac": mac.to_string(), "pinned_profile": null })))
+    Ok(Response::json(
+        &serde_json::json!({ "mac": mac.to_string(), "pinned_profile": null }),
+    ))
 }
 
 /// `POST /api/hosts/{host}/once`
@@ -138,7 +154,9 @@ pub async fn clear_once(request: Req) -> Result<Response> {
     if !hosts.set_once(mac, None).await? {
         return Err(unknown_host(mac));
     }
-    Ok(Response::json(&serde_json::json!({ "mac": mac.to_string(), "once_profile": null })))
+    Ok(Response::json(
+        &serde_json::json!({ "mac": mac.to_string(), "once_profile": null }),
+    ))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -171,7 +189,9 @@ pub async fn tags(request: Req) -> Result<Response> {
         hosts.save(&host).await?;
     }
 
-    Ok(Response::json(&serde_json::json!({ "mac": mac.to_string(), "tags": host.tags.0 })))
+    Ok(Response::json(
+        &serde_json::json!({ "mac": mac.to_string(), "tags": host.tags.0 }),
+    ))
 }
 
 /// `DELETE /api/hosts/{host}` — forget a machine entirely.
@@ -191,8 +211,11 @@ pub async fn forget(request: Req) -> Result<Response> {
 
 /// `GET /api/events`
 pub async fn events(request: Req) -> Result<Response> {
-    let limit: u64 =
-        request.input("limit").and_then(|l| l.parse().ok()).unwrap_or(100).clamp(1, 1000);
+    let limit: u64 = request
+        .input("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(100)
+        .clamp(1, 1000);
     let events = resolve::<BootEventRepository>()?.recent(limit).await?;
 
     Ok(Response::json(&serde_json::json!({
@@ -385,7 +408,10 @@ fn route_mac(request: &Request) -> Result<MacAddr> {
 }
 
 async fn find_host(mac: MacAddr) -> Result<Host> {
-    resolve::<HostRepository>()?.by_mac(mac).await?.ok_or_else(|| unknown_host(mac))
+    resolve::<HostRepository>()?
+        .by_mac(mac)
+        .await?
+        .ok_or_else(|| unknown_host(mac))
 }
 
 fn unknown_host(mac: MacAddr) -> Error {
@@ -406,7 +432,11 @@ fn known_profile(profile: &str) -> Result<()> {
     let declared: Vec<&str> = rules.profiles().keys().map(String::as_str).collect();
     Err(Error::bad_request(format!(
         "`{profile}` is not a profile. Declared: {}",
-        if declared.is_empty() { "none".to_string() } else { declared.join(", ") }
+        if declared.is_empty() {
+            "none".to_string()
+        } else {
+            declared.join(", ")
+        }
     )))
 }
 

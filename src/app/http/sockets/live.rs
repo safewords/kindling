@@ -61,7 +61,10 @@ struct Connection {
 
 impl LiveSocket {
     pub fn new(feed: LiveFeed) -> Self {
-        Self { feed, connections: Mutex::new(HashMap::new()) }
+        Self {
+            feed,
+            connections: Mutex::new(HashMap::new()),
+        }
     }
 
     /// How many browsers are connected — for a test, and for anyone curious.
@@ -71,7 +74,9 @@ impl LiveSocket {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<SocketId, Connection>> {
         // The map holds handles, not state a panic could leave half-written.
-        self.connections.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.connections
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -121,7 +126,13 @@ impl WebSocketHandler for LiveSocket {
             }
         });
 
-        self.lock().insert(socket.id(), Connection { forwarder: forwarder.abort_handle(), heard });
+        self.lock().insert(
+            socket.id(),
+            Connection {
+                forwarder: forwarder.abort_handle(),
+                heard,
+            },
+        );
         Ok(())
     }
 
@@ -130,7 +141,9 @@ impl WebSocketHandler for LiveSocket {
     /// there — a browser cannot see WebSocket ping frames.
     async fn on_message(&self, socket: &Socket, message: Message) -> Result<()> {
         if let Some(connection) = self.lock().get(&socket.id()) {
-            connection.heard.store(Utc::now().timestamp(), Ordering::Relaxed);
+            connection
+                .heard
+                .store(Utc::now().timestamp(), Ordering::Relaxed);
         }
 
         match message.as_text() {
@@ -156,7 +169,10 @@ mod tests {
 
     fn socket() -> (Socket, mpsc::UnboundedReceiver<Outbound>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Socket::new(SocketId::next(), "/ws/live", Vec::new(), tx), rx)
+        (
+            Socket::new(SocketId::next(), "/ws/live", Vec::new(), tx),
+            rx,
+        )
     }
 
     /// The next frame the socket was asked to send, parsed.
@@ -182,7 +198,9 @@ mod tests {
         handler.on_connect(&socket).await.unwrap();
         assert_eq!(next(&mut rx).await["type"], "hello");
 
-        feed.publish(|| LiveUpdate::HostForgotten { mac: "18:66:da:11:22:33".into() });
+        feed.publish(|| LiveUpdate::HostForgotten {
+            mac: "18:66:da:11:22:33".into(),
+        });
         let heard = next(&mut rx).await;
         assert_eq!(heard["type"], "host.forgotten");
         assert_eq!(heard["data"]["mac"], "18:66:da:11:22:33");
@@ -201,7 +219,9 @@ mod tests {
         next(&mut first_rx).await;
         next(&mut second_rx).await;
 
-        feed.publish(|| LiveUpdate::Config { changed: vec!["SERVER_PORT".into()] });
+        feed.publish(|| LiveUpdate::Config {
+            changed: vec!["SERVER_PORT".into()],
+        });
         assert_eq!(next(&mut first_rx).await["type"], "config");
         assert_eq!(next(&mut second_rx).await["type"], "config");
     }
@@ -213,9 +233,19 @@ mod tests {
         handler.on_connect(&socket).await.unwrap();
         next(&mut rx).await;
 
-        handler.on_message(&socket, Message::text("DELETE everything")).await.unwrap();
-        handler.on_message(&socket, Message::text("ping")).await.unwrap();
-        assert_eq!(next(&mut rx).await["type"], "pong", "the first thing back is the pong");
+        handler
+            .on_message(&socket, Message::text("DELETE everything"))
+            .await
+            .unwrap();
+        handler
+            .on_message(&socket, Message::text("ping"))
+            .await
+            .unwrap();
+        assert_eq!(
+            next(&mut rx).await["type"],
+            "pong",
+            "the first thing back is the pong"
+        );
     }
 
     #[tokio::test]
@@ -240,7 +270,11 @@ mod tests {
             }
             tokio::task::yield_now().await;
         }
-        assert_eq!(feed.watchers(), 0, "nothing is still subscribed for a closed socket");
+        assert_eq!(
+            feed.watchers(),
+            0,
+            "nothing is still subscribed for a closed socket"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -253,11 +287,17 @@ mod tests {
         // The silence is measured on the wall clock, so it is aged directly
         // rather than waited for.
         if let Some(connection) = handler.lock().get(&socket.id()) {
-            connection.heard.store(Utc::now().timestamp() - SILENCE.as_secs() as i64 - 1, Ordering::Relaxed);
+            connection.heard.store(
+                Utc::now().timestamp() - SILENCE.as_secs() as i64 - 1,
+                Ordering::Relaxed,
+            );
         }
         tokio::time::advance(CHECK_EVERY * 2).await;
 
-        let outbound = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await.unwrap().unwrap();
+        let outbound = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
         assert!(matches!(outbound, Outbound::Close(_)), "{outbound:?}");
     }
 }

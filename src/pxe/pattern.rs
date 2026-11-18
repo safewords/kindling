@@ -138,9 +138,14 @@ impl Cidr {
             IpAddr::V6(_) => 128,
         };
         if prefix > max {
-            return Err(CidrParseError(format!("/{prefix} is wider than the address family allows")));
+            return Err(CidrParseError(format!(
+                "/{prefix} is wider than the address family allows"
+            )));
         }
-        Ok(Self { network: masked(network, prefix), prefix })
+        Ok(Self {
+            network: masked(network, prefix),
+            prefix,
+        })
     }
 
     pub fn contains(&self, address: IpAddr) -> bool {
@@ -168,12 +173,20 @@ fn masked(address: IpAddr, prefix: u8) -> IpAddr {
     match address {
         IpAddr::V4(v4) => {
             let bits = u32::from(v4);
-            let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
+            let mask = if prefix == 0 {
+                0
+            } else {
+                u32::MAX << (32 - prefix)
+            };
             IpAddr::V4(Ipv4Addr::from(bits & mask))
         }
         IpAddr::V6(v6) => {
             let bits = u128::from(v6);
-            let mask = if prefix == 0 { 0 } else { u128::MAX << (128 - prefix) };
+            let mask = if prefix == 0 {
+                0
+            } else {
+                u128::MAX << (128 - prefix)
+            };
             IpAddr::V6(Ipv6Addr::from(bits & mask))
         }
     }
@@ -214,8 +227,9 @@ impl FromStr for Cidr {
             // A bare address is a host route, which is what somebody writing
             // one address in a list means.
             None => {
-                let address: IpAddr =
-                    s.parse().map_err(|_| CidrParseError(format!("`{s}` is not an IP address or CIDR block")))?;
+                let address: IpAddr = s.parse().map_err(|_| {
+                    CidrParseError(format!("`{s}` is not an IP address or CIDR block"))
+                })?;
                 let prefix = if address.is_ipv4() { 32 } else { 128 };
                 Cidr::new(address, prefix)
             }
@@ -318,7 +332,10 @@ mod tests {
     fn a_zero_prefix_is_everything_of_its_family() {
         let any: Cidr = "0.0.0.0/0".parse().unwrap();
         assert!(any.contains_v4(Ipv4Addr::new(1, 2, 3, 4)));
-        assert!(!any.contains("::1".parse().unwrap()), "a v4 rule is not a v6 rule");
+        assert!(
+            !any.contains("::1".parse().unwrap()),
+            "a v4 rule is not a v6 rule"
+        );
     }
 
     #[test]

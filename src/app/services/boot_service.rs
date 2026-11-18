@@ -24,9 +24,7 @@ use crate::pxe::dhcp::proxy::BootPolicy;
 use crate::pxe::facts::ClientFacts;
 use crate::pxe::mac::MacAddr;
 use crate::pxe::oui::OuiDatabase;
-use crate::pxe::policy::{
-    self, AnswerKind, Decision, FirmwareAnswer, Overrides, ServerSettings,
-};
+use crate::pxe::policy::{self, AnswerKind, Decision, FirmwareAnswer, Overrides, ServerSettings};
 use crate::pxe::profile::RenderError;
 use crate::pxe::tftp::server::{ReadOutcome, TftpEvents};
 
@@ -48,7 +46,14 @@ impl BootService {
         events: Arc<BootEventRepository>,
         loops: Arc<LoopBreaker>,
     ) -> Self {
-        Self { rules, ouis, settings, hosts, events, loops }
+        Self {
+            rules,
+            ouis,
+            settings,
+            hosts,
+            events,
+            loops,
+        }
     }
 
     pub fn loops(&self) -> &Arc<LoopBreaker> {
@@ -129,8 +134,11 @@ impl BootService {
         let host = self.hosts.by_mac(facts.mac).await.ok().flatten();
 
         let overrides = host.as_ref().map(Host::overrides).unwrap_or_default();
-        let facts =
-            facts.with_inventory(overrides.tags.clone(), overrides.known, overrides.boot_count);
+        let facts = facts.with_inventory(
+            overrides.tags.clone(),
+            overrides.known,
+            overrides.boot_count,
+        );
         let decision = policy::decide(&rules, &facts, &overrides);
 
         (facts, decision)
@@ -146,8 +154,8 @@ impl BootService {
         let (facts, decision) = self.decide(facts).await;
         let rules = self.rules.current();
 
-        let script = policy::ipxe_script(&decision, &facts, &rules, &self.settings)
-            .map_err(render_error)?;
+        let script =
+            policy::ipxe_script(&decision, &facts, &rules, &self.settings).map_err(render_error)?;
 
         // Getting this far is proof the machine is not going in circles,
         // whatever the DHCP stage suspected.
@@ -174,8 +182,10 @@ impl BootService {
             }
         }
 
-        if let Err(e) =
-            self.hosts.record_boot(facts.mac, decision.profile.as_deref(), Utc::now()).await
+        if let Err(e) = self
+            .hosts
+            .record_boot(facts.mac, decision.profile.as_deref(), Utc::now())
+            .await
         {
             tracing::warn!(mac = %facts.mac, error = %e, "could not record the boot");
         }
@@ -241,9 +251,14 @@ impl BootService {
         }
         // No transaction id means this did not come from a DHCP packet, and
         // the whole discriminator is the transaction id.
-        let Some(xid) = facts.transaction else { return answer };
+        let Some(xid) = facts.transaction else {
+            return answer;
+        };
 
-        match self.loops.offer(facts.mac, &answer.file, xid, std::time::Instant::now()) {
+        match self
+            .loops
+            .offer(facts.mac, &answer.file, xid, std::time::Instant::now())
+        {
             LoopState::Fine => answer,
             LoopState::Looping { transactions } => {
                 tracing::error!(
@@ -345,7 +360,13 @@ impl TftpEvents for BootService {
             .map(|mac| mac.to_string())
             .unwrap_or_else(|| format!("ip:{}", peer.ip()));
 
-        self.record(BootEvent::plain(mac, kind, detail, Some(peer.ip().to_string()))).await;
+        self.record(BootEvent::plain(
+            mac,
+            kind,
+            detail,
+            Some(peer.ip().to_string()),
+        ))
+        .await;
     }
 }
 
@@ -357,7 +378,11 @@ impl BootService {
     /// nothing and is never *wrong* about which machine did what.
     async fn mac_for_address(&self, peer: &SocketAddr) -> Option<MacAddr> {
         let ip = peer.ip().to_string();
-        let hosts = self.hosts.matching(Criteria::new().where_eq("last_ip", ip).limit(2)).await.ok()?;
+        let hosts = self
+            .hosts
+            .matching(Criteria::new().where_eq("last_ip", ip).limit(2))
+            .await
+            .ok()?;
 
         // Two machines have claimed this address since the server started.
         // Guessing between them would put the wrong machine in the log, so
@@ -414,16 +439,27 @@ tag = ["provisioned"]
         let first = policy::decide(
             &rules,
             &facts.clone().with_inventory(Vec::new(), false, 0),
-            &Overrides { known: false, ..Default::default() },
+            &Overrides {
+                known: false,
+                ..Default::default()
+            },
         );
         assert_eq!(first.profile.as_deref(), Some("install"));
 
         let second = policy::decide(
             &rules,
             &facts.with_inventory(Vec::new(), true, 1),
-            &Overrides { known: true, boot_count: 1, ..Default::default() },
+            &Overrides {
+                known: true,
+                boot_count: 1,
+                ..Default::default()
+            },
         );
-        assert_eq!(second.profile.as_deref(), Some("menu"), "the second boot is not a new machine");
+        assert_eq!(
+            second.profile.as_deref(),
+            Some("menu"),
+            "the second boot is not a new machine"
+        );
     }
 
     #[test]
@@ -438,6 +474,9 @@ tag = ["provisioned"]
         );
 
         let decision = policy::decide(&rules, &facts, &Overrides::default());
-        assert!(decision.profile.is_some(), "a database outage is not a reason not to boot");
+        assert!(
+            decision.profile.is_some(),
+            "a database outage is not a reason not to boot"
+        );
     }
 }

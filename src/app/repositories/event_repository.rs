@@ -16,7 +16,10 @@ pub struct BootEventRepository {
 
 impl BootEventRepository {
     pub fn new(database: Database) -> Self {
-        Self { inner: EntityRepository::<BootEvent>::new(database), live: LiveFeed::new() }
+        Self {
+            inner: EntityRepository::<BootEvent>::new(database),
+            live: LiveFeed::new(),
+        }
     }
 
     /// Announce every row written here on this feed. Without it the rows are
@@ -39,7 +42,14 @@ impl BootEventRepository {
 
     /// The most recent events, newest first.
     pub async fn recent(&self, limit: u64) -> Result<Vec<BootEvent>> {
-        self.inner.matching(Criteria::new().order_by_desc("at").order_by_desc("id").limit(limit)).await
+        self.inner
+            .matching(
+                Criteria::new()
+                    .order_by_desc("at")
+                    .order_by_desc("id")
+                    .limit(limit),
+            )
+            .await
     }
 
     /// One machine's history — the answer to "what happened to this thing".
@@ -56,7 +66,9 @@ impl BootEventRepository {
     }
 
     pub async fn since(&self, since: DateTime<Utc>) -> Result<u64> {
-        self.inner.count_matching(Criteria::new().where_gte("at", since)).await
+        self.inner
+            .count_matching(Criteria::new().where_gte("at", since))
+            .await
     }
 
     pub async fn count(&self) -> Result<u64> {
@@ -71,7 +83,9 @@ impl BootEventRepository {
     /// bound.
     pub async fn prune(&self, older_than_days: i64) -> Result<u64> {
         let cutoff = Utc::now() - Duration::days(older_than_days.max(1));
-        self.inner.delete_matching(Criteria::new().where_lt("at", cutoff)).await
+        self.inner
+            .delete_matching(Criteria::new().where_lt("at", cutoff))
+            .await
     }
 }
 

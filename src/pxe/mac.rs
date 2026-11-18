@@ -79,7 +79,11 @@ pub struct MacParseError(String);
 
 impl fmt::Display for MacParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "`{}` is not a MAC address: expected six octets like `aa:bb:cc:dd:ee:ff`", self.0)
+        write!(
+            f,
+            "`{}` is not a MAC address: expected six octets like `aa:bb:cc:dd:ee:ff`",
+            self.0
+        )
     }
 }
 
@@ -89,7 +93,10 @@ impl FromStr for MacAddr {
     type Err = MacParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cleaned: String = s.chars().filter(|c| !matches!(c, ':' | '-' | '.' | ' ')).collect();
+        let cleaned: String = s
+            .chars()
+            .filter(|c| !matches!(c, ':' | '-' | '.' | ' '))
+            .collect();
 
         // Not `chunks(2)` over the bytes: a non-ASCII character would be split
         // mid-codepoint and the error would name a string the user never typed.
@@ -126,9 +133,13 @@ mod tests {
     #[test]
     fn every_spelling_parses_to_the_same_address() {
         let expected = MacAddr::new([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
-        for spelling in
-            ["aa:bb:cc:dd:ee:ff", "AA-BB-CC-DD-EE-FF", "aabbccddeeff", "AABB.CCDD.EEFF", "aa bb cc dd ee ff"]
-        {
+        for spelling in [
+            "aa:bb:cc:dd:ee:ff",
+            "AA-BB-CC-DD-EE-FF",
+            "aabbccddeeff",
+            "AABB.CCDD.EEFF",
+            "aa bb cc dd ee ff",
+        ] {
             assert_eq!(spelling.parse::<MacAddr>().unwrap(), expected, "{spelling}");
         }
     }
@@ -143,7 +154,13 @@ mod tests {
 
     #[test]
     fn something_that_is_not_an_address_says_so() {
-        for bad in ["", "aa:bb:cc", "gg:bb:cc:dd:ee:ff", "aa:bb:cc:dd:ee:ff:00", "hello"] {
+        for bad in [
+            "",
+            "aa:bb:cc",
+            "gg:bb:cc:dd:ee:ff",
+            "aa:bb:cc:dd:ee:ff:00",
+            "hello",
+        ] {
             assert!(bad.parse::<MacAddr>().is_err(), "`{bad}` should not parse");
         }
     }
@@ -159,8 +176,14 @@ mod tests {
     #[test]
     fn a_hypervisor_address_is_recognised_as_locally_administered() {
         // QEMU's 52:54:00 and Docker's 02:42:… both have bit 1 set.
-        assert!("52:54:00:12:34:56".parse::<MacAddr>().unwrap().is_locally_administered());
-        assert!(!"18:66:da:11:22:33".parse::<MacAddr>().unwrap().is_locally_administered());
+        assert!("52:54:00:12:34:56"
+            .parse::<MacAddr>()
+            .unwrap()
+            .is_locally_administered());
+        assert!(!"18:66:da:11:22:33"
+            .parse::<MacAddr>()
+            .unwrap()
+            .is_locally_administered());
     }
 
     #[test]

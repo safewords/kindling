@@ -59,15 +59,24 @@ pub enum EditErrorKind {
 
 impl EditError {
     pub fn invalid(problem: impl Into<String>) -> Self {
-        Self { kind: EditErrorKind::Invalid, problems: vec![problem.into()] }
+        Self {
+            kind: EditErrorKind::Invalid,
+            problems: vec![problem.into()],
+        }
     }
 
     pub fn not_found(problem: impl Into<String>) -> Self {
-        Self { kind: EditErrorKind::NotFound, problems: vec![problem.into()] }
+        Self {
+            kind: EditErrorKind::NotFound,
+            problems: vec![problem.into()],
+        }
     }
 
     fn storage(problem: impl Into<String>) -> Self {
-        Self { kind: EditErrorKind::Storage, problems: vec![problem.into()] }
+        Self {
+            kind: EditErrorKind::Storage,
+            problems: vec![problem.into()],
+        }
     }
 }
 
@@ -81,7 +90,10 @@ impl std::error::Error for EditError {}
 
 impl From<LoadError> for EditError {
     fn from(e: LoadError) -> Self {
-        Self { kind: EditErrorKind::Invalid, problems: e.problems }
+        Self {
+            kind: EditErrorKind::Invalid,
+            problems: e.problems,
+        }
     }
 }
 
@@ -100,7 +112,11 @@ pub struct EditMeta {
 
 impl EditMeta {
     pub fn new(summary: impl Into<String>, actor: impl Into<String>) -> Self {
-        Self { summary: summary.into(), actor: actor.into(), base_revision: None }
+        Self {
+            summary: summary.into(),
+            actor: actor.into(),
+            base_revision: None,
+        }
     }
 
     pub fn based_on(mut self, revision: Option<u64>) -> Self {
@@ -188,7 +204,10 @@ impl RuleStore {
 
     /// The last load failure, if what is stored is not what is running.
     pub fn last_error(&self) -> Option<(DateTime<Utc>, String)> {
-        self.last_error.read().unwrap_or_else(|p| p.into_inner()).clone()
+        self.last_error
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     pub fn repository(&self) -> Option<&Arc<PolicyRepository>> {
@@ -239,17 +258,26 @@ impl RuleStore {
                         "imported the policy file into the database. It is no longer read: edit \
                          the policy in the web UI, and delete or archive the file."
                     );
-                    (rules.to_document(), format!("imported from `{}`", path.display()))
+                    (
+                        rules.to_document(),
+                        format!("imported from `{}`", path.display()),
+                    )
                 }
                 None => {
                     tracing::info!("no policy yet; seeding the starter policy");
-                    (PolicyDocument::from_toml(STARTER_POLICY)?, "the starter policy".to_string())
+                    (
+                        PolicyDocument::from_toml(STARTER_POLICY)?,
+                        "the starter policy".to_string(),
+                    )
                 }
             };
             let rules = RuleSet::from_document(document, Origin::Database)?;
             let document = rules.to_document();
             repository.sync(&document).await.map_err(storage_problem)?;
-            repository.record(&document, &summary, "seed").await.map_err(storage_problem)?;
+            repository
+                .record(&document, &summary, "seed")
+                .await
+                .map_err(storage_problem)?;
         }
 
         self.reload().await
@@ -257,14 +285,17 @@ impl RuleStore {
 
     /// Re-read the stored policy. On failure the running policy is untouched.
     pub async fn reload(&self) -> Result<Arc<RuleSet>, LoadError> {
-        let repository = self
-            .repository
-            .as_ref()
-            .ok_or_else(|| LoadError::one("this policy was supplied directly and has nothing to reload"))?;
+        let repository = self.repository.as_ref().ok_or_else(|| {
+            LoadError::one("this policy was supplied directly and has nothing to reload")
+        })?;
 
         let loaded = async {
             let document = repository.load().await.map_err(storage_problem)?;
-            let revision = repository.latest().await.map_err(storage_problem)?.map(|r| r.id);
+            let revision = repository
+                .latest()
+                .await
+                .map_err(storage_problem)?
+                .map(|r| r.id);
             let rules = RuleSet::from_document(document, Origin::Database)?;
             Ok::<_, LoadError>((rules, revision))
         }
@@ -290,7 +321,8 @@ impl RuleStore {
                 );
                 *self.last_error.write().unwrap_or_else(|p| p.into_inner()) =
                     Some((Utc::now(), e.to_string()));
-                self.live.publish(|| LiveUpdate::policy_failed(e.to_string()));
+                self.live
+                    .publish(|| LiveUpdate::policy_failed(e.to_string()));
                 Err(e)
             }
         }
@@ -316,7 +348,9 @@ impl RuleStore {
                     problems: vec![format!(
                         "the policy changed since you loaded it (you had revision {base}, it is \
                          now {}). Reload to see the other change, then make yours again.",
-                        self.revision().map(|r| r.to_string()).unwrap_or_else(|| "none".into())
+                        self.revision()
+                            .map(|r| r.to_string())
+                            .unwrap_or_else(|| "none".into())
                     )],
                 });
             }
@@ -332,7 +366,10 @@ impl RuleStore {
         if document == before {
             // Nothing to store, and a revision saying "nothing changed" would
             // be noise in the one list that should be all signal.
-            return Ok(Applied { rules: self.current(), revision: None });
+            return Ok(Applied {
+                rules: self.current(),
+                revision: None,
+            });
         }
 
         repository.sync(&document).await.map_err(|e| {
@@ -343,7 +380,10 @@ impl RuleStore {
             ))
         })?;
 
-        let revision = match repository.record(&document, &meta.summary, &meta.actor).await {
+        let revision = match repository
+            .record(&document, &meta.summary, &meta.actor)
+            .await
+        {
             Ok(revision) => Some(revision),
             Err(e) => {
                 // The change is stored; only its history entry is missing.
@@ -355,7 +395,10 @@ impl RuleStore {
         };
 
         let rules = Arc::new(rules);
-        self.swap(Arc::clone(&rules), revision.as_ref().map(|r| r.id).or(self.revision()));
+        self.swap(
+            Arc::clone(&rules),
+            revision.as_ref().map(|r| r.id).or(self.revision()),
+        );
         tracing::info!(change = %meta.summary, actor = %meta.actor, "boot policy changed");
         self.live.publish(|| LiveUpdate::policy_loaded(&rules));
 
@@ -363,7 +406,11 @@ impl RuleStore {
     }
 
     /// Replace the whole policy.
-    pub async fn replace(&self, meta: EditMeta, document: PolicyDocument) -> Result<Applied, EditError> {
+    pub async fn replace(
+        &self,
+        meta: EditMeta,
+        document: PolicyDocument,
+    ) -> Result<Applied, EditError> {
         self.apply(meta, move |current| {
             *current = document;
             Ok(())
@@ -382,7 +429,10 @@ impl RuleStore {
             .ok_or_else(|| EditError::not_found(format!("there is no revision {id}")))?;
 
         self.replace(
-            EditMeta::new(format!("restored revision {id} ({})", revision.summary), actor),
+            EditMeta::new(
+                format!("restored revision {id} ({})", revision.summary),
+                actor,
+            ),
             revision.document.0,
         )
         .await
@@ -400,7 +450,10 @@ impl RuleStore {
 }
 
 fn storage_problem(e: rainier_framework::prelude::Error) -> LoadError {
-    LoadError::one(format!("the policy could not be read from the database: {}", e.message()))
+    LoadError::one(format!(
+        "the policy could not be read from the database: {}",
+        e.message()
+    ))
 }
 
 /// Where an earlier release kept its policy file, relative to the working
@@ -416,9 +469,11 @@ mod tests {
 
     #[test]
     fn the_starter_policy_is_valid() {
-        let rules =
-            RuleSet::from_document(PolicyDocument::from_toml(STARTER_POLICY).unwrap(), Origin::Database)
-                .expect("the starter policy must load");
+        let rules = RuleSet::from_document(
+            PolicyDocument::from_toml(STARTER_POLICY).unwrap(),
+            Origin::Database,
+        )
+        .expect("the starter policy must load");
         assert!(!rules.rules().is_empty());
         assert!(rules.settings().default_profile.is_some());
     }
@@ -426,7 +481,10 @@ mod tests {
     #[tokio::test]
     async fn a_fixed_store_refuses_changes_and_says_why() {
         let store = RuleStore::fixed(RuleSet::default());
-        let error = store.apply(EditMeta::new("x", "test"), |_| Ok(())).await.unwrap_err();
+        let error = store
+            .apply(EditMeta::new("x", "test"), |_| Ok(()))
+            .await
+            .unwrap_err();
         assert_eq!(error.kind, EditErrorKind::Storage);
         assert!(store.reload().await.is_err());
     }

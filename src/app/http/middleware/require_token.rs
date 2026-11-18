@@ -30,7 +30,9 @@ impl RequireToken {
     /// as a valid secret would let an empty header through.
     pub fn new(token: impl Into<String>) -> Self {
         let token = token.into();
-        Self { token: Some(token.trim().to_string()).filter(|token| !token.is_empty()) }
+        Self {
+            token: Some(token.trim().to_string()).filter(|token| !token.is_empty()),
+        }
     }
 
     pub fn is_configured(&self) -> bool {
@@ -38,7 +40,9 @@ impl RequireToken {
     }
 
     fn presented<'a>(&self, request: &'a Request) -> Option<&'a str> {
-        request.bearer_token().or_else(|| request.header(TOKEN_HEADER))
+        request
+            .bearer_token()
+            .or_else(|| request.header(TOKEN_HEADER))
     }
 }
 
@@ -57,7 +61,10 @@ impl Middleware for RequireToken {
             Some(given) if constant_time_eq(given.as_bytes(), expected.as_bytes()) => {
                 next.run(request).await
             }
-            Some(_) => refuse(StatusCode::UNAUTHORIZED, "That token is not this server's token."),
+            Some(_) => refuse(
+                StatusCode::UNAUTHORIZED,
+                "That token is not this server's token.",
+            ),
             None => refuse(
                 StatusCode::UNAUTHORIZED,
                 "This endpoint needs a token: `Authorization: Bearer …` or an `x-pxe-token` \
@@ -106,7 +113,10 @@ mod tests {
     }
 
     fn with_header(name: &str, value: &str) -> Request {
-        Request::builder().uri("/api/hosts/x/pin").header(name, value).build()
+        Request::builder()
+            .uri("/api/hosts/x/pin")
+            .header(name, value)
+            .build()
     }
 
     #[tokio::test]
@@ -129,9 +139,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_right_token_gets_through_either_way_it_is_presented() {
-        for (header, value) in
-            [("authorization", "Bearer s3cret"), ("x-pxe-token", "s3cret")]
-        {
+        for (header, value) in [
+            ("authorization", "Bearer s3cret"),
+            ("x-pxe-token", "s3cret"),
+        ] {
             let response = run(RequireToken::new("s3cret"), with_header(header, value)).await;
             assert_eq!(response.status(), StatusCode::OK, "{header}");
         }
@@ -140,11 +151,21 @@ mod tests {
     #[tokio::test]
     async fn a_wrong_or_missing_token_is_refused() {
         assert_eq!(
-            run(RequireToken::new("s3cret"), with_header("x-pxe-token", "nope")).await.status(),
+            run(
+                RequireToken::new("s3cret"),
+                with_header("x-pxe-token", "nope")
+            )
+            .await
+            .status(),
             StatusCode::UNAUTHORIZED
         );
         assert_eq!(
-            run(RequireToken::new("s3cret"), Request::builder().uri("/x").build()).await.status(),
+            run(
+                RequireToken::new("s3cret"),
+                Request::builder().uri("/x").build()
+            )
+            .await
+            .status(),
             StatusCode::UNAUTHORIZED
         );
     }

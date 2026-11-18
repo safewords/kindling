@@ -232,7 +232,11 @@ pub fn firmware_answer(
     // A profile may insist on its own loader — a machine that should be handed
     // `pxelinux.0` or a vendor's own binary and never chainloaded through
     // iPXE at all.
-    if let Some(profile) = decision.profile.as_deref().and_then(|name| rules.profile(name)) {
+    if let Some(profile) = decision
+        .profile
+        .as_deref()
+        .and_then(|name| rules.profile(name))
+    {
         if let Some(file) = profile.bootfile_for(&arch) {
             return Some(FirmwareAnswer {
                 over_http: is_url(file) || facts.is_http_boot(),
@@ -246,10 +250,15 @@ pub fn firmware_answer(
     // iPXE is already running: hand it its script rather than hand it itself.
     // Without this check the machine chainloads iPXE from iPXE, forever.
     if facts.is_ipxe() {
-        return Some(script_answer(settings, "iPXE is asking, so it gets the script"));
+        return Some(script_answer(
+            settings,
+            "iPXE is asking, so it gets the script",
+        ));
     }
 
-    let loader = rules.bootloader_for(&arch).unwrap_or_else(|| default_bootloader(&arch));
+    let loader = rules
+        .bootloader_for(&arch)
+        .unwrap_or_else(|| default_bootloader(&arch));
     Some(FirmwareAnswer {
         over_http: facts.is_http_boot(),
         file: absolute(loader, settings, facts.is_http_boot()),
@@ -339,8 +348,9 @@ pub fn render_named(
     rules: &RuleSet,
     settings: &ServerSettings,
 ) -> Result<String, RenderError> {
-    let profile =
-        rules.profile(name).ok_or_else(|| RenderError::UnknownProfile(name.to_string()))?;
+    let profile = rules
+        .profile(name)
+        .ok_or_else(|| RenderError::UnknownProfile(name.to_string()))?;
 
     // A profile reached from a menu was not chosen by a rule, but the rules'
     // variables still describe this machine — so they are worked out again
@@ -361,12 +371,18 @@ pub fn render_named(
 /// Strip what iPXE's `echo` would choke on, so a reason with an awkward
 /// character in it does not become a broken script.
 fn sanitise(text: &str) -> String {
-    text.chars().filter(|c| !matches!(c, '\n' | '\r' | '$' | '|' | '&' | '#')).collect()
+    text.chars()
+        .filter(|c| !matches!(c, '\n' | '\r' | '$' | '|' | '&' | '#'))
+        .collect()
 }
 
 /// Every profile with its label, for a menu or an API listing.
 pub fn profile_labels(rules: &RuleSet) -> BTreeMap<String, String> {
-    rules.profiles().iter().map(|(name, profile)| (name.clone(), profile.label_or(name))).collect()
+    rules
+        .profiles()
+        .iter()
+        .map(|(name, profile)| (name.clone(), profile.label_or(name)))
+        .collect()
 }
 
 #[cfg(test)]
@@ -437,7 +453,10 @@ profile = "hands-off"
         assert_eq!(by_rule.profile.as_deref(), Some("install"));
         assert_eq!(by_rule.source, DecisionSource::Rule);
 
-        let pinned = Overrides { pinned_profile: Some("local".into()), ..Default::default() };
+        let pinned = Overrides {
+            pinned_profile: Some("local".into()),
+            ..Default::default()
+        };
         let by_pin = decide(&rules, &vm, &pinned);
         assert_eq!(by_pin.profile.as_deref(), Some("local"));
         assert_eq!(by_pin.source, DecisionSource::Pin);
@@ -457,12 +476,23 @@ profile = "hands-off"
         // The DHCP stage sees the one-shot too, and clearing it there would
         // mean the machine never actually boots the thing.
         let rules = rules();
-        let once = Overrides { once_profile: Some("install".into()), ..Default::default() };
+        let once = Overrides {
+            once_profile: Some("install".into()),
+            ..Default::default()
+        };
 
-        let firmware = decide(&rules, &facts("52:54:00:01:02:03", ClientArch::BIOS, Stage::Firmware), &once);
+        let firmware = decide(
+            &rules,
+            &facts("52:54:00:01:02:03", ClientArch::BIOS, Stage::Firmware),
+            &once,
+        );
         assert!(!firmware.consumes_once);
 
-        let ipxe = decide(&rules, &facts("52:54:00:01:02:03", ClientArch::BIOS, Stage::Ipxe), &once);
+        let ipxe = decide(
+            &rules,
+            &facts("52:54:00:01:02:03", ClientArch::BIOS, Stage::Ipxe),
+            &once,
+        );
         assert!(ipxe.consumes_once);
     }
 
@@ -472,11 +502,18 @@ profile = "hands-off"
         // boot what the rules say, loudly.
         let rules = rules();
         let vm = facts("52:54:00:11:22:33", ClientArch::X64_UEFI, Stage::Ipxe);
-        let stale = Overrides { pinned_profile: Some("deleted".into()), ..Default::default() };
+        let stale = Overrides {
+            pinned_profile: Some("deleted".into()),
+            ..Default::default()
+        };
 
         let decision = decide(&rules, &vm, &stale);
         assert_eq!(decision.profile.as_deref(), Some("install"));
-        assert!(decision.reason.contains("not a profile any more"), "{}", decision.reason);
+        assert!(
+            decision.reason.contains("not a profile any more"),
+            "{}",
+            decision.reason
+        );
     }
 
     #[test]
@@ -503,7 +540,11 @@ profile = "hands-off"
         let rules = rules();
         let settings = settings();
 
-        let http = facts("18:66:da:01:02:03", ClientArch::X64_UEFI_HTTP, Stage::Firmware);
+        let http = facts(
+            "18:66:da:01:02:03",
+            ClientArch::X64_UEFI_HTTP,
+            Stage::Firmware,
+        );
         let decision = decide(&rules, &http, &Overrides::default());
         let answer = firmware_answer(&decision, &http, &rules, &settings).unwrap();
         assert_eq!(
@@ -518,7 +559,10 @@ profile = "hands-off"
         let rules = rules();
         let settings = settings();
         let machine = facts("18:66:da:01:02:03", ClientArch::BIOS, Stage::Firmware);
-        let pinned = Overrides { pinned_profile: Some("pxelinux".into()), ..Default::default() };
+        let pinned = Overrides {
+            pinned_profile: Some("pxelinux".into()),
+            ..Default::default()
+        };
 
         let decision = decide(&rules, &machine, &pinned);
         let answer = firmware_answer(&decision, &machine, &rules, &settings).unwrap();
@@ -534,7 +578,10 @@ profile = "hands-off"
 
         assert_eq!(decision.profile.as_deref(), Some("hands-off"));
         assert!(!decision.answers(&rules));
-        assert_eq!(firmware_answer(&decision, &switch, &rules, &settings()), None);
+        assert_eq!(
+            firmware_answer(&decision, &switch, &rules, &settings()),
+            None
+        );
     }
 
     #[test]
@@ -546,7 +593,10 @@ profile = "hands-off"
 
         let script = ipxe_script(&decision, &machine, &rules, &settings()).unwrap();
         assert!(script.starts_with("#!ipxe\n"));
-        assert!(script.contains("No boot policy matched aa:bb:cc:dd:ee:ff"), "{script}");
+        assert!(
+            script.contains("No boot policy matched aa:bb:cc:dd:ee:ff"),
+            "{script}"
+        );
         assert!(script.contains("exit 1"), "{script}");
     }
 
@@ -567,7 +617,11 @@ profile = "hands-off"
         )
         .unwrap();
 
-        assert_eq!(script.lines().count(), 5, "the reason stayed on one line: {script}");
+        assert_eq!(
+            script.lines().count(),
+            5,
+            "the reason stayed on one line: {script}"
+        );
         assert!(!script.contains("${var}"));
     }
 
@@ -578,7 +632,10 @@ profile = "hands-off"
         let decision = decide(&rules, &vm, &Overrides::default());
 
         let script = ipxe_script(&decision, &vm, &rules, &settings()).unwrap();
-        assert!(script.contains("kernel http://10.0.0.2:8080/ubuntu/vmlinuz"), "{script}");
+        assert!(
+            script.contains("kernel http://10.0.0.2:8080/ubuntu/vmlinuz"),
+            "{script}"
+        );
     }
 
     #[test]
@@ -586,6 +643,10 @@ profile = "hands-off"
         assert_eq!(default_bootloader("bios"), "undionly.kpxe");
         assert_eq!(default_bootloader("x64-uefi"), "ipxe.efi");
         assert_eq!(default_bootloader("arm64-uefi"), "ipxe-arm64.efi");
-        assert_eq!(default_bootloader("arch-9000"), "ipxe.efi", "an unknown arch gets the common one");
+        assert_eq!(
+            default_bootloader("arch-9000"),
+            "ipxe.efi",
+            "an unknown arch gets the common one"
+        );
     }
 }

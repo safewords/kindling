@@ -35,8 +35,9 @@ impl Command for HostsCommand {
         let hosts = app.resolve::<HostRepository>()?;
         let limit: u64 = args.parsed_or("limit", 100u64).clamp(1, 1000);
 
-        let found =
-            hosts.page(1, limit, args.option("search"), args.option("tag")).await?;
+        let found = hosts
+            .page(1, limit, args.option("search"), args.option("tag"))
+            .await?;
 
         if args.flag("json") {
             println!(
@@ -56,7 +57,18 @@ impl Command for HostsCommand {
         }
 
         io::table(
-            &["MAC", "VENDOR", "ARCH", "HOSTNAME", "LAST PROFILE", "PIN", "ONCE", "BOOTS", "LAST SEEN", "TAGS"],
+            &[
+                "MAC",
+                "VENDOR",
+                "ARCH",
+                "HOSTNAME",
+                "LAST PROFILE",
+                "PIN",
+                "ONCE",
+                "BOOTS",
+                "LAST SEEN",
+                "TAGS",
+            ],
             &found
                 .data
                 .iter()
@@ -65,13 +77,20 @@ impl Command for HostsCommand {
                         host.mac.clone(),
                         host.vendor.clone().unwrap_or_else(|| "—".into()),
                         host.arch.clone(),
-                        host.hostname.clone().or_else(|| host.product.clone()).unwrap_or_else(|| "—".into()),
+                        host.hostname
+                            .clone()
+                            .or_else(|| host.product.clone())
+                            .unwrap_or_else(|| "—".into()),
                         host.last_profile.clone().unwrap_or_else(|| "—".into()),
                         host.pinned_profile.clone().unwrap_or_else(|| "—".into()),
                         host.once_profile.clone().unwrap_or_else(|| "—".into()),
                         host.boot_count.to_string(),
                         host.last_seen.format("%Y-%m-%d %H:%M").to_string(),
-                        if host.tags.0.is_empty() { "—".into() } else { host.tags.0.join(", ") },
+                        if host.tags.0.is_empty() {
+                            "—".into()
+                        } else {
+                            host.tags.0.join(", ")
+                        },
                     ]
                 })
                 .collect::<Vec<_>>(),
@@ -112,7 +131,9 @@ impl Command for PinCommand {
     }
 
     async fn handle(&self, args: &Arguments, app: &Application) -> Result<i32> {
-        let Some(mac) = mac_argument(args) else { return Ok(exit::FAILURE) };
+        let Some(mac) = mac_argument(args) else {
+            return Ok(exit::FAILURE);
+        };
         let hosts = app.resolve::<HostRepository>()?;
         let once = args.flag("once");
 
@@ -144,7 +165,12 @@ impl Command for PinCommand {
                 if rules.profiles().is_empty() {
                     "none".to_string()
                 } else {
-                    rules.profiles().keys().cloned().collect::<Vec<_>>().join(", ")
+                    rules
+                        .profiles()
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 }
             );
             return Ok(exit::FAILURE);
@@ -196,7 +222,9 @@ impl Command for TagCommand {
     }
 
     async fn handle(&self, args: &Arguments, app: &Application) -> Result<i32> {
-        let Some(mac) = mac_argument(args) else { return Ok(exit::FAILURE) };
+        let Some(mac) = mac_argument(args) else {
+            return Ok(exit::FAILURE);
+        };
         let hosts = app.resolve::<HostRepository>()?;
 
         let Some(mut host) = hosts.by_mac(mac).await? else {
@@ -218,7 +246,11 @@ impl Command for TagCommand {
 
         println!(
             "{mac}: {}",
-            if host.tags.0.is_empty() { "no tags".to_string() } else { host.tags.0.join(", ") }
+            if host.tags.0.is_empty() {
+                "no tags".to_string()
+            } else {
+                host.tags.0.join(", ")
+            }
         );
         Ok(exit::SUCCESS)
     }
@@ -254,7 +286,9 @@ impl Command for LogCommand {
 
         let rows = match args.option("mac") {
             Some(_) => {
-                let Some(mac) = mac_argument(args) else { return Ok(exit::FAILURE) };
+                let Some(mac) = mac_argument(args) else {
+                    return Ok(exit::FAILURE);
+                };
                 events.for_mac(mac, limit).await?
             }
             None => events.recent(limit).await?,

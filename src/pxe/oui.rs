@@ -77,7 +77,11 @@ struct Assignment {
 }
 
 const fn a(prefix: [u8; 3], vendor: &'static str, class: DeviceClass) -> Assignment {
-    Assignment { prefix, vendor, class }
+    Assignment {
+        prefix,
+        vendor,
+        class,
+    }
 }
 
 /// The prefixes a lab meets, rather than all 35,000 of them.
@@ -95,8 +99,16 @@ const BUILT_IN: &[Assignment] = &[
     a([0x0a, 0x00, 0x27], "VirtualBox", DeviceClass::Virtual),
     a([0x52, 0x54, 0x00], "QEMU/KVM", DeviceClass::Virtual),
     a([0x00, 0x16, 0x3e], "Xen", DeviceClass::Virtual),
-    a([0x00, 0x15, 0x5d], "Microsoft Hyper-V", DeviceClass::Virtual),
-    a([0x00, 0x03, 0xff], "Microsoft Hyper-V", DeviceClass::Virtual),
+    a(
+        [0x00, 0x15, 0x5d],
+        "Microsoft Hyper-V",
+        DeviceClass::Virtual,
+    ),
+    a(
+        [0x00, 0x03, 0xff],
+        "Microsoft Hyper-V",
+        DeviceClass::Virtual,
+    ),
     a([0x00, 0x1c, 0x42], "Parallels", DeviceClass::Virtual),
     a([0x02, 0x42, 0xac], "Docker", DeviceClass::Virtual),
     a([0xfa, 0x16, 0x3e], "OpenStack", DeviceClass::Virtual),
@@ -227,7 +239,9 @@ impl Default for OuiDatabase {
 
 impl OuiDatabase {
     pub fn new() -> Self {
-        Self { extra: HashMap::new() }
+        Self {
+            extra: HashMap::new(),
+        }
     }
 
     /// How many prefixes were loaded from disk on top of the built-ins.
@@ -346,7 +360,11 @@ fn parse_csv(line: &str) -> Option<([u8; 3], String, DeviceClass)> {
     if vendor.is_empty() {
         return None;
     }
-    let class = match fields.next().map(|field| field.trim().to_ascii_lowercase()).as_deref() {
+    let class = match fields
+        .next()
+        .map(|field| field.trim().to_ascii_lowercase())
+        .as_deref()
+    {
         Some("virtual") => DeviceClass::Virtual,
         Some("sbc") => DeviceClass::Sbc,
         Some("network") => DeviceClass::Network,
@@ -357,7 +375,10 @@ fn parse_csv(line: &str) -> Option<([u8; 3], String, DeviceClass)> {
 }
 
 fn parse_prefix(text: &str) -> Option<[u8; 3]> {
-    let cleaned: String = text.chars().filter(|c| !matches!(c, ':' | '-' | '.' | ' ')).collect();
+    let cleaned: String = text
+        .chars()
+        .filter(|c| !matches!(c, ':' | '-' | '.' | ' '))
+        .collect();
     if cleaned.len() != 6 || !cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
@@ -421,9 +442,16 @@ mod tests {
     fn a_loaded_list_overrides_the_built_in_table() {
         // The operator supplied a vendor list; they meant it.
         let mut database = OuiDatabase::new();
-        database.insert([0x18, 0x66, 0xda], "Dell (retired fleet)", DeviceClass::Physical);
+        database.insert(
+            [0x18, 0x66, 0xda],
+            "Dell (retired fleet)",
+            DeviceClass::Physical,
+        );
         assert_eq!(
-            database.identify(mac("18:66:da:11:22:33")).vendor.as_deref(),
+            database
+                .identify(mac("18:66:da:11:22:33"))
+                .vendor
+                .as_deref(),
             Some("Dell (retired fleet)")
         );
     }
@@ -438,7 +466,10 @@ mod tests {
         );
         assert_eq!(database.loaded(), 2);
         assert_eq!(
-            database.identify(mac("28:cd:c1:00:00:01")).vendor.as_deref(),
+            database
+                .identify(mac("28:cd:c1:00:00:01"))
+                .vendor
+                .as_deref(),
             Some("Raspberry Pi Trading Ltd")
         );
     }
@@ -451,9 +482,18 @@ mod tests {
              00:11:22,Old switch,network\n\
              de:ad:be,No class given\n",
         );
-        assert_eq!(database.identify(mac("aa:bb:cc:00:00:01")).device_class, DeviceClass::Virtual);
-        assert_eq!(database.identify(mac("00:11:22:00:00:01")).device_class, DeviceClass::Network);
-        assert_eq!(database.identify(mac("de:ad:be:00:00:01")).device_class, DeviceClass::Physical);
+        assert_eq!(
+            database.identify(mac("aa:bb:cc:00:00:01")).device_class,
+            DeviceClass::Virtual
+        );
+        assert_eq!(
+            database.identify(mac("00:11:22:00:00:01")).device_class,
+            DeviceClass::Network
+        );
+        assert_eq!(
+            database.identify(mac("de:ad:be:00:00:01")).device_class,
+            DeviceClass::Physical
+        );
     }
 
     #[test]
@@ -464,7 +504,13 @@ mod tests {
             "\n   \n# comment\nnot a line at all\nAA-BB   (hex)\tToo short\naa:bb:cc,Good\n",
         );
         assert_eq!(database.loaded(), 1);
-        assert_eq!(database.identify(mac("aa:bb:cc:00:00:01")).vendor.as_deref(), Some("Good"));
+        assert_eq!(
+            database
+                .identify(mac("aa:bb:cc:00:00:01"))
+                .vendor
+                .as_deref(),
+            Some("Good")
+        );
     }
 
     #[test]
@@ -473,6 +519,10 @@ mod tests {
         let before = prefixes.len();
         prefixes.sort_unstable();
         prefixes.dedup();
-        assert_eq!(prefixes.len(), before, "a prefix is listed twice, so one row is dead");
+        assert_eq!(
+            prefixes.len(),
+            before,
+            "a prefix is listed twice, so one row is dead"
+        );
     }
 }

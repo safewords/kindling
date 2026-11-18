@@ -77,10 +77,13 @@ pub async fn file(request: Req) -> Result<Response> {
 
     // `PublicFiles` resolves against the request path, and this route is
     // mounted a directory deep, so the prefix comes off first.
-    let relative = request.path().trim_start_matches('/').trim_start_matches("boot").to_string();
+    let relative = request
+        .path()
+        .trim_start_matches('/')
+        .trim_start_matches("boot")
+        .to_string();
 
     let served = files.serve(&rebased(&request, &relative)).await;
-
 
     // Only the loaders are logged, not every chunk of every image. A machine
     // fetching its boot loader is the event that says an offer was acted on;
@@ -93,7 +96,11 @@ pub async fn file(request: Req) -> Result<Response> {
             .note(BootEvent::plain(
                 mac.or_else(|| peer.clone().map(|ip| format!("ip:{ip}")))
                     .unwrap_or_else(|| "unknown".into()),
-                if served.is_successful() { EventKind::Http } else { EventKind::Refused },
+                if served.is_successful() {
+                    EventKind::Http
+                } else {
+                    EventKind::Refused
+                },
                 format!("{relative} ({})", served.status().as_u16()),
                 peer,
             ))
@@ -164,7 +171,9 @@ fn facts_from_query(request: &Request, mac: MacAddr) -> ClientFacts {
         // Builds from before the rename say `safewords`.
         .with_user_class(Some(
             match request.input("loader").as_deref() {
-                Some("kindling") | Some(LEGACY_OWN_LOADER) => crate::pxe::facts::OWN_IPXE_USER_CLASS,
+                Some("kindling") | Some(LEGACY_OWN_LOADER) => {
+                    crate::pxe::facts::OWN_IPXE_USER_CLASS
+                }
                 _ => "iPXE",
             }
             .to_string(),
@@ -187,7 +196,9 @@ fn facts_from_query(request: &Request, mac: MacAddr) -> ClientFacts {
 /// the same as not knowing. Both become `None` here so a rule matching on
 /// `product` does not fire for a machine that reported nothing.
 fn non_empty(value: Option<String>) -> Option<String> {
-    value.map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn is_boot_loader(path: &str) -> bool {
@@ -232,9 +243,15 @@ mod tests {
     fn the_reflector_asks_ipxe_for_what_only_ipxe_knows() {
         let script = reflector("http://10.0.0.2:8080/");
         assert!(script.starts_with("#!ipxe\n"));
-        assert!(script.contains("chain http://10.0.0.2:8080/boot.ipxe?mac=${net0/mac:hexhyp}"), "{script}");
+        assert!(
+            script.contains("chain http://10.0.0.2:8080/boot.ipxe?mac=${net0/mac:hexhyp}"),
+            "{script}"
+        );
         assert!(script.contains("product=${product:uristring}"), "{script}");
-        assert!(!script.contains("//boot.ipxe"), "the trailing slash was handled: {script}");
+        assert!(
+            !script.contains("//boot.ipxe"),
+            "the trailing slash was handled: {script}"
+        );
     }
 
     #[test]
@@ -269,7 +286,10 @@ mod tests {
         // matching `product = ["*"]` must not fire on that.
         assert_eq!(non_empty(Some("".into())), None);
         assert_eq!(non_empty(Some("   ".into())), None);
-        assert_eq!(non_empty(Some(" OptiPlex 7090 ".into())), Some("OptiPlex 7090".into()));
+        assert_eq!(
+            non_empty(Some(" OptiPlex 7090 ".into())),
+            Some("OptiPlex 7090".into())
+        );
         assert_eq!(non_empty(None), None);
     }
 }

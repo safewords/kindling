@@ -61,7 +61,6 @@ pub fn environment(mode: Mode) -> Env {
 /// test that needs one of them different cannot set it afterwards. Handing the
 /// environment in is the only honest way to say so.
 pub async fn boot_with(mode: Mode, env: Env) -> Result<Arc<Application>> {
-
     // Read before the builder runs, because whether metrics exist decides
     // whether the middleware is installed — and middleware is declared, not
     // added later.
@@ -101,7 +100,9 @@ pub async fn boot_with(mode: Mode, env: Env) -> Result<Arc<Application>> {
             // configuration — which is how a boot server ends up telling a
             // whole rack to fetch everything from 127.0.0.1.
             if let Err(e) = config::configure(c, &env) {
-                *configuration_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(e);
+                *configuration_error
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = Some(e);
             }
 
             // Said here rather than left to `APP_ENV`, because unset means
@@ -125,7 +126,10 @@ pub async fn boot_with(mode: Mode, env: Env) -> Result<Arc<Application>> {
                 .with_vite(Vite::new("public").without_cache()),
         }))
         .with_database(database.clone())
-        .with_provider(PxeServiceProvider { database, live: live.clone() })
+        .with_provider(PxeServiceProvider {
+            database,
+            live: live.clone(),
+        })
         .with_websockets(routes::ws::routes(live))
         .with_schedule(routes::console::schedule)
         .with_middleware({
@@ -233,11 +237,17 @@ mod tests {
             redact("mysql://pxe:hunter2@db.internal:3306/pxe"),
             "mysql://pxe:***@db.internal:3306/pxe"
         );
-        assert_eq!(redact("mysql://user:pa:ss@host/db"), "mysql://user:***@host/db");
+        assert_eq!(
+            redact("mysql://user:pa:ss@host/db"),
+            "mysql://user:***@host/db"
+        );
 
         let at_sign = redact("mysql://user:p@ss@host/db");
         assert_eq!(at_sign, "mysql://user:***@host/db");
-        assert!(!at_sign.contains("ss@"), "the tail of the password leaked: {at_sign}");
+        assert!(
+            !at_sign.contains("ss@"),
+            "the tail of the password leaked: {at_sign}"
+        );
     }
 
     #[test]
@@ -253,7 +263,11 @@ mod tests {
             sqlite_path("sqlite://storage/pxe.sqlite?mode=rwc").as_deref(),
             Some("storage/pxe.sqlite")
         );
-        assert_eq!(sqlite_path("sqlite::memory:"), None, "there is no file to make room for");
+        assert_eq!(
+            sqlite_path("sqlite::memory:"),
+            None,
+            "there is no file to make room for"
+        );
         assert_eq!(sqlite_path("postgres://host/db"), None);
     }
 
@@ -265,6 +279,8 @@ mod tests {
 
         assert!(app.resolve::<crate::app::services::BootService>().is_ok());
         assert!(app.resolve::<crate::app::services::RuleStore>().is_ok());
-        assert!(app.resolve::<crate::app::repositories::HostRepository>().is_ok());
+        assert!(app
+            .resolve::<crate::app::repositories::HostRepository>()
+            .is_ok());
     }
 }

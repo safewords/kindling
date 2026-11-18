@@ -56,7 +56,15 @@ const fn spec(
     default: &'static str,
     help: &'static str,
 ) -> Spec {
-    Spec { key, section, label, kind, default, help, choices: None }
+    Spec {
+        key,
+        section,
+        label,
+        kind,
+        default,
+        help,
+        choices: None,
+    }
 }
 
 /// Every setting this server reads, in the order an editor should show them.
@@ -373,7 +381,11 @@ impl EnvFile {
                 let redacted = spec.kind == Kind::Secret && value.is_some();
                 Setting {
                     spec,
-                    value: if redacted { Some(mask(value.as_deref().unwrap_or_default())) } else { value },
+                    value: if redacted {
+                        Some(mask(value.as_deref().unwrap_or_default()))
+                    } else {
+                        value
+                    },
                     redacted,
                 }
             })
@@ -388,8 +400,9 @@ impl EnvFile {
         let env = Env::parse(text).isolated();
         let config = Config::new();
 
-        crate::config::configure(&config, &env)
-            .map_err(|e| EnvError { problems: vec![e.message().to_string()] })
+        crate::config::configure(&config, &env).map_err(|e| EnvError {
+            problems: vec![e.message().to_string()],
+        })
     }
 
     /// Replace the whole file after validating it, keeping a copy of the old
@@ -405,10 +418,7 @@ impl EnvFile {
     /// A value of `None` comments the line out rather than deleting it, which
     /// is what somebody turning a setting off almost always means — and it
     /// leaves the name visible for whoever comes looking for it.
-    pub fn apply(
-        &self,
-        changes: &[(String, Option<String>)],
-    ) -> Result<String, EnvError> {
+    pub fn apply(&self, changes: &[(String, Option<String>)]) -> Result<String, EnvError> {
         let edited = rewrite(&self.read(), changes);
         Self::validate(&edited)?;
         self.save(&edited)?;
@@ -537,7 +547,10 @@ mod tests {
         assert!(edited.contains("# Listeners"));
         assert!(edited.contains("SERVER_PORT=80"));
         assert!(!edited.contains("SERVER_PORT=8080"));
-        assert!(edited.contains("PXE_SERVER_IP=10.0.0.2"), "untouched settings stay untouched");
+        assert!(
+            edited.contains("PXE_SERVER_IP=10.0.0.2"),
+            "untouched settings stay untouched"
+        );
     }
 
     #[test]
@@ -568,7 +581,10 @@ mod tests {
 
         assert!(edited.contains("#PXE_SERVER_IP="));
         assert!(!edited.contains("PXE_SERVER_IP=10.0.0.2"));
-        assert!(edited.contains("# The address machines come back to."), "its comment survives");
+        assert!(
+            edited.contains("# The address machines come back to."),
+            "its comment survives"
+        );
     }
 
     #[test]
@@ -592,7 +608,10 @@ mod tests {
         // Unset `APP_ENV` means production, where guessing the address is
         // refused — so the editor catches it before the restart does.
         let error = EnvFile::validate("SERVER_PORT=8080\n").unwrap_err();
-        assert!(error.to_string().contains("PXE_SERVER_IP is not set"), "{error}");
+        assert!(
+            error.to_string().contains("PXE_SERVER_IP is not set"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -604,10 +623,18 @@ mod tests {
         assert_eq!(keys.len(), before, "a setting is listed twice");
 
         for spec in CATALOGUE {
-            assert!(spec.help.len() > 40, "`{}` needs a real explanation", spec.key);
+            assert!(
+                spec.help.len() > 40,
+                "`{}` needs a real explanation",
+                spec.key
+            );
             assert!(!spec.label.is_empty(), "`{}` needs a label", spec.key);
             if spec.kind == Kind::Choice {
-                assert!(spec.choices.is_some(), "`{}` is a choice of what?", spec.key);
+                assert!(
+                    spec.choices.is_some(),
+                    "`{}` is a choice of what?",
+                    spec.key
+                );
             }
         }
     }
@@ -625,16 +652,30 @@ mod tests {
     #[test]
     fn the_editor_reads_values_out_of_the_file_and_hides_the_secrets() {
         let path = std::env::temp_dir().join(format!("kindling-env-{}.env", std::process::id()));
-        std::fs::write(&path, "PXE_SERVER_IP=10.0.0.2\nPXE_API_TOKEN=supersecretvalue\n").unwrap();
+        std::fs::write(
+            &path,
+            "PXE_SERVER_IP=10.0.0.2\nPXE_API_TOKEN=supersecretvalue\n",
+        )
+        .unwrap();
 
         let settings = EnvFile::at(&path).settings();
-        let address = settings.iter().find(|s| s.spec.key == "PXE_SERVER_IP").unwrap();
+        let address = settings
+            .iter()
+            .find(|s| s.spec.key == "PXE_SERVER_IP")
+            .unwrap();
         assert_eq!(address.value.as_deref(), Some("10.0.0.2"));
         assert!(!address.redacted);
 
-        let token = settings.iter().find(|s| s.spec.key == "PXE_API_TOKEN").unwrap();
+        let token = settings
+            .iter()
+            .find(|s| s.spec.key == "PXE_API_TOKEN")
+            .unwrap();
         assert!(token.redacted);
-        assert!(!token.value.as_deref().unwrap_or_default().contains("supersecret"));
+        assert!(!token
+            .value
+            .as_deref()
+            .unwrap_or_default()
+            .contains("supersecret"));
 
         let _ = std::fs::remove_file(path);
     }

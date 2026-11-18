@@ -37,7 +37,10 @@ mod tests {
             keys::PXE_TFTP_ROOT.path(),
             keys::PXE_RULES_PATH.path(),
         ] {
-            assert!(config.has(key), "`{key}` was not set — is its section wired into configure?");
+            assert!(
+                config.has(key),
+                "`{key}` was not set — is its section wired into configure?"
+            );
         }
     }
 
@@ -46,8 +49,14 @@ mod tests {
         // The ordering dependency this module's `configure` exists to get
         // right: the PXE section reads the port the server section just set.
         let config = Config::new();
-        configure(&config, &Env::parse("SERVER_PORT=9090\nPXE_SERVER_IP=10.0.0.2").isolated())
-            .unwrap();
-        assert_eq!(config.get(keys::PXE_HTTP_BASE).as_deref(), Some("http://10.0.0.2:9090"));
+        configure(
+            &config,
+            &Env::parse("SERVER_PORT=9090\nPXE_SERVER_IP=10.0.0.2").isolated(),
+        )
+        .unwrap();
+        assert_eq!(
+            config.get(keys::PXE_HTTP_BASE).as_deref(),
+            Some("http://10.0.0.2:9090")
+        );
     }
 }

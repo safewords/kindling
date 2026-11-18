@@ -71,7 +71,10 @@ mod tests {
             "pxe:log",
             "pxe:ipxe",
         ] {
-            assert!(console.find(name).is_some(), "`{name}` should be registered");
+            assert!(
+                console.find(name).is_some(),
+                "`{name}` should be registered"
+            );
         }
     }
 

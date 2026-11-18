@@ -85,7 +85,8 @@ fn profile_json(rules: &RuleSet, name: &str, profile: &Profile) -> serde_json::V
         .profiles()
         .iter()
         .filter(|(_, other)| {
-            other.entries.iter().any(|e| e.profile == name) || other.default.as_deref() == Some(name)
+            other.entries.iter().any(|e| e.profile == name)
+                || other.default.as_deref() == Some(name)
         })
         .map(|(menu, _)| menu.as_str())
         .collect();
@@ -139,7 +140,10 @@ pub struct Candidate {
 
 impl Candidate {
     /// The policy as it would be with this change, validated.
-    fn resolve(self, current: &RuleSet) -> std::result::Result<(RuleSet, Option<String>), EditError> {
+    fn resolve(
+        self,
+        current: &RuleSet,
+    ) -> std::result::Result<(RuleSet, Option<String>), EditError> {
         let mut focus = None;
         let document = if let Some(document) = self.document {
             document
@@ -209,7 +213,9 @@ pub async fn preview(request: Req) -> Result<Response> {
     let (proposed, focus) = match candidate.resolve(&current) {
         Ok(resolved) => resolved,
         Err(e) => {
-            return Ok(Response::json(&serde_json::json!({ "ok": false, "problems": e.problems })))
+            return Ok(Response::json(
+                &serde_json::json!({ "ok": false, "problems": e.problems }),
+            ))
         }
     };
 
@@ -219,12 +225,16 @@ pub async fn preview(request: Req) -> Result<Response> {
     let mut rows = Vec::new();
     let (mut fires, mut changes) = (0usize, 0usize);
     for host in &hosts {
-        let Some(facts) = host.facts(service.ouis()) else { continue };
+        let Some(facts) = host.facts(service.ouis()) else {
+            continue;
+        };
         let overrides = host.overrides();
         let before = policy::decide(&current, &facts, &overrides);
         let after = policy::decide(&proposed, &facts, &overrides);
 
-        let fired = focus.as_deref().is_some_and(|name| after.evaluation.matched.iter().any(|m| m == name));
+        let fired = focus
+            .as_deref()
+            .is_some_and(|name| after.evaluation.matched.iter().any(|m| m == name));
         let changed = before.profile != after.profile;
         fires += usize::from(fired);
         changes += usize::from(changed);
@@ -280,7 +290,11 @@ pub async fn render_profile(request: Req) -> Result<Response> {
     let body: RenderRequest = request.json()?;
     let service = resolve::<BootService>()?;
     let rules = service.rules().current();
-    let name = body.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "preview".into());
+    let name = body
+        .name
+        .clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| "preview".into());
 
     let problems = body.profile.problems(&name);
     let mac: MacAddr = body
@@ -288,15 +302,26 @@ pub async fn render_profile(request: Req) -> Result<Response> {
         .as_deref()
         .and_then(|m| m.parse().ok())
         .unwrap_or_else(|| "18:66:da:11:22:33".parse().unwrap_or(MacAddr::ZERO));
-    let arch = body.arch.as_deref().and_then(parse_arch).unwrap_or(ClientArch::X64_UEFI);
+    let arch = body
+        .arch
+        .as_deref()
+        .and_then(parse_arch)
+        .unwrap_or(ClientArch::X64_UEFI);
 
     // The machine as the inventory knows it, if it does.
-    let host = resolve::<HostRepository>()?.by_mac(mac).await.ok().flatten();
+    let host = resolve::<HostRepository>()?
+        .by_mac(mac)
+        .await
+        .ok()
+        .flatten();
     let facts = host
         .as_ref()
         .and_then(|h| h.facts(service.ouis()))
         .unwrap_or_else(|| ClientFacts::new(mac, arch, Stage::Ipxe).identified(service.ouis()));
-    let overrides = host.as_ref().map(|h| h.overrides()).unwrap_or_else(Overrides::default);
+    let overrides = host
+        .as_ref()
+        .map(|h| h.overrides())
+        .unwrap_or_else(Overrides::default);
     let vars = policy::decide(&rules, &facts, &overrides).evaluation.vars;
 
     // Render against the running profiles plus this one, so a menu being
@@ -313,13 +338,17 @@ pub async fn render_profile(request: Req) -> Result<Response> {
         vars: &vars,
     };
 
-    Ok(Response::json(&match profile::render(&name, &body.profile, &context) {
-        Ok(script) => serde_json::json!({ "ok": problems.is_empty(), "script": script, "problems": problems, "mac": mac.to_string() }),
-        Err(e) => {
-            let problems: Vec<String> = problems.into_iter().chain([e.to_string()]).collect();
-            serde_json::json!({ "ok": false, "script": null, "problems": problems, "mac": mac.to_string() })
-        }
-    }))
+    Ok(Response::json(
+        &match profile::render(&name, &body.profile, &context) {
+            Ok(script) => {
+                serde_json::json!({ "ok": problems.is_empty(), "script": script, "problems": problems, "mac": mac.to_string() })
+            }
+            Err(e) => {
+                let problems: Vec<String> = problems.into_iter().chain([e.to_string()]).collect();
+                serde_json::json!({ "ok": false, "script": null, "problems": problems, "mac": mac.to_string() })
+            }
+        },
+    ))
 }
 
 /// `GET /api/policy/export?format=json|toml`
@@ -333,7 +362,8 @@ pub async fn export(request: Req) -> Result<Response> {
             Response::download(text.into_bytes(), &format!("pxe-policy-{stamp}.toml"))
         }
         _ => {
-            let text = serde_json::to_string_pretty(&document).map_err(|e| Error::internal(e.to_string()))?;
+            let text = serde_json::to_string_pretty(&document)
+                .map_err(|e| Error::internal(e.to_string()))?;
             Response::download(text.into_bytes(), &format!("pxe-policy-{stamp}.json"))
         }
     })
@@ -341,7 +371,11 @@ pub async fn export(request: Req) -> Result<Response> {
 
 /// `GET /api/policy/revisions`
 pub async fn revisions(request: Req) -> Result<Response> {
-    let limit: u64 = request.input("limit").and_then(|l| l.parse().ok()).unwrap_or(100).clamp(1, 500);
+    let limit: u64 = request
+        .input("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(100)
+        .clamp(1, 500);
     let store = resolve::<RuleStore>()?;
     let list = match store.repository() {
         Some(repository) => repository.revisions(limit).await?,
@@ -382,7 +416,11 @@ pub async fn replace(request: Req) -> Result<Response> {
             PolicyDocument::from_text(&text).map_err(|e| edit_error(e.into()))?,
             "a policy was imported",
         ),
-        (None, None) => return Err(Error::bad_request("send a `document`, or a `text` to import")),
+        (None, None) => {
+            return Err(Error::bad_request(
+                "send a `document`, or a `text` to import",
+            ))
+        }
     };
     let meta = meta(&request, summary);
 
@@ -395,7 +433,11 @@ pub async fn add_rule(request: Req) -> Result<Response> {
     let rule: Rule = request.json()?;
     let meta = meta(&request, &format!("rule `{}` added", rule.name));
     let store = resolve::<RuleStore>()?;
-    changed(store.apply(meta, move |document| put_rule(document, None, rule)).await)
+    changed(
+        store
+            .apply(meta, move |document| put_rule(document, None, rule))
+            .await,
+    )
 }
 
 /// `PUT /api/policy/rules/{rule}` — replace a rule, and rename it if the body
@@ -410,7 +452,11 @@ pub async fn put_rule_endpoint(request: Req) -> Result<Response> {
     };
     let meta = meta(&request, &summary);
     let store = resolve::<RuleStore>()?;
-    changed(store.apply(meta, move |document| put_rule(document, Some(&name), rule)).await)
+    changed(
+        store
+            .apply(meta, move |document| put_rule(document, Some(&name), rule))
+            .await,
+    )
 }
 
 /// `PATCH /api/policy/rules/{rule}` — change some of a rule's fields.
@@ -423,7 +469,9 @@ pub async fn patch_rule(request: Req) -> Result<Response> {
     let name = route_param(&request, "rule")?;
     let patch: serde_json::Value = request.json()?;
     let serde_json::Value::Object(patch) = patch else {
-        return Err(Error::bad_request("a patch is an object of the fields to change"));
+        return Err(Error::bad_request(
+            "a patch is an object of the fields to change",
+        ));
     };
     let meta = meta(&request, &format!("rule `{name}` updated"));
     let store = resolve::<RuleStore>()?;
@@ -456,7 +504,11 @@ pub async fn remove_rule(request: Req) -> Result<Response> {
     let name = route_param(&request, "rule")?;
     let meta = meta(&request, &format!("rule `{name}` removed"));
     let store = resolve::<RuleStore>()?;
-    changed(store.apply(meta, move |document| take_rule(document, &name).map(|_| ())).await)
+    changed(
+        store
+            .apply(meta, move |document| take_rule(document, &name).map(|_| ()))
+            .await,
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -471,7 +523,10 @@ pub async fn set_rule_enabled(request: Req) -> Result<Response> {
     let body: Enabled = request.json()?;
     let meta = meta(
         &request,
-        &format!("rule `{name}` {}", if body.enabled { "enabled" } else { "disabled" }),
+        &format!(
+            "rule `{name}` {}",
+            if body.enabled { "enabled" } else { "disabled" }
+        ),
     );
     let store = resolve::<RuleStore>()?;
     changed(
@@ -504,8 +559,11 @@ pub async fn reorder_rules(request: Req) -> Result<Response> {
     changed(
         store
             .apply(meta, move |document| {
-                let mut named: BTreeMap<String, Rule> =
-                    document.rules.drain(..).map(|r| (r.name.clone(), r)).collect();
+                let mut named: BTreeMap<String, Rule> = document
+                    .rules
+                    .drain(..)
+                    .map(|r| (r.name.clone(), r))
+                    .collect();
                 let count = body.order.len() as i64;
                 let mut ordered = Vec::with_capacity(named.len());
                 for (index, name) in body.order.iter().enumerate() {
@@ -518,7 +576,11 @@ pub async fn reorder_rules(request: Req) -> Result<Response> {
                 if !named.is_empty() {
                     return Err(EditError::invalid(format!(
                         "the new order leaves out {}; name every rule",
-                        named.keys().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")
+                        named
+                            .keys()
+                            .map(|n| format!("`{n}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     )));
                 }
                 document.rules = ordered;
@@ -557,7 +619,9 @@ pub async fn put_profile(request: Req) -> Result<Response> {
                     return Ok(());
                 };
                 if document.profiles.contains_key(&new) {
-                    return Err(EditError::invalid(format!("a profile called `{new}` already exists")));
+                    return Err(EditError::invalid(format!(
+                        "a profile called `{new}` already exists"
+                    )));
                 }
                 document.profiles.remove(&name);
                 document.profiles.insert(new.clone(), profile);
@@ -656,12 +720,19 @@ pub struct Bootloader {
 pub async fn put_bootloader(request: Req) -> Result<Response> {
     let arch = route_param(&request, "arch")?;
     let body: Bootloader = request.json()?;
-    let meta = meta(&request, &format!("the boot loader for `{arch}` was changed"));
+    let meta = meta(
+        &request,
+        &format!("the boot loader for `{arch}` was changed"),
+    );
     let store = resolve::<RuleStore>()?;
     changed(
         store
             .apply(meta, move |document| {
-                match body.file.map(|f| f.trim().to_string()).filter(|f| !f.is_empty()) {
+                match body
+                    .file
+                    .map(|f| f.trim().to_string())
+                    .filter(|f| !f.is_empty())
+                {
                     Some(file) => {
                         document.bootloaders.insert(arch, file);
                     }
@@ -713,7 +784,9 @@ pub async fn save_template(request: Req) -> Result<Response> {
         return Err(Error::bad_request("a template needs a name"));
     }
     if !body.rule.is_object() {
-        return Err(Error::bad_request("a template's `rule` is an object of rule fields"));
+        return Err(Error::bad_request(
+            "a template's `rule` is an object of rule fields",
+        ));
     }
     // A template's conditions are checked now, so the wizard never offers a
     // starting point that cannot be saved.
@@ -729,7 +802,11 @@ pub async fn save_template(request: Req) -> Result<Response> {
         .save_template(
             name,
             body.description.filter(|d| !d.trim().is_empty()),
-            body.category.as_deref().map(str::trim).filter(|c| !c.is_empty()).unwrap_or("custom"),
+            body.category
+                .as_deref()
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .unwrap_or("custom"),
             body.rule,
         )
         .await?;
@@ -739,7 +816,9 @@ pub async fn save_template(request: Req) -> Result<Response> {
 /// `DELETE /api/policy/templates/{template}`
 pub async fn delete_template(request: Req) -> Result<Response> {
     let raw = route_param(&request, "template")?;
-    let id: u64 = raw.parse().map_err(|_| Error::bad_request(format!("`{raw}` is not a template id")))?;
+    let id: u64 = raw
+        .parse()
+        .map_err(|_| Error::bad_request(format!("`{raw}` is not a template id")))?;
     if !resolve::<PolicyRepository>()?.delete_template(id).await? {
         return Err(Error::not_found(format!("there is no template {id}")));
     }
@@ -752,7 +831,11 @@ pub async fn delete_template(request: Req) -> Result<Response> {
 
 /// Put `rule` into the document: in place of `original` when editing (and
 /// renaming, if the names differ), at the end when adding.
-fn put_rule(document: &mut PolicyDocument, original: Option<&str>, mut rule: Rule) -> std::result::Result<(), EditError> {
+fn put_rule(
+    document: &mut PolicyDocument,
+    original: Option<&str>,
+    mut rule: Rule,
+) -> std::result::Result<(), EditError> {
     rule.name = rule.name.trim().to_string();
     if rule.name.is_empty() {
         return Err(EditError::invalid("a rule needs a name"));
@@ -800,18 +883,28 @@ fn take_rule(document: &mut PolicyDocument, name: &str) -> std::result::Result<R
 fn actor(request: &Request) -> String {
     request
         .header(ACTOR_HEADER)
-        .map(|a| a.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(32).collect())
+        .map(|a| {
+            a.chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .take(32)
+                .collect()
+        })
         .filter(|a: &String| !a.is_empty())
         .unwrap_or_else(|| "api".to_string())
 }
 
 fn meta(request: &Request, summary: &str) -> EditMeta {
-    EditMeta::new(summary, actor(request))
-        .based_on(request.header(REVISION_HEADER).and_then(|r| r.trim().parse().ok()))
+    EditMeta::new(summary, actor(request)).based_on(
+        request
+            .header(REVISION_HEADER)
+            .and_then(|r| r.trim().parse().ok()),
+    )
 }
 
 /// The answer to every write: what is running now.
-fn changed(result: std::result::Result<crate::app::services::Applied, EditError>) -> Result<Response> {
+fn changed(
+    result: std::result::Result<crate::app::services::Applied, EditError>,
+) -> Result<Response> {
     let applied = result.map_err(edit_error)?;
     let store = resolve::<RuleStore>()?;
     Ok(Response::json(&serde_json::json!({
@@ -846,5 +939,6 @@ fn route_param(request: &Request, name: &str) -> Result<String> {
 
 fn revision_param(request: &Request) -> Result<u64> {
     let raw = route_param(request, "revision")?;
-    raw.parse().map_err(|_| Error::bad_request(format!("`{raw}` is not a revision number")))
+    raw.parse()
+        .map_err(|_| Error::bad_request(format!("`{raw}` is not a revision number")))
 }

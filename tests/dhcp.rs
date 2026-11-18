@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use pxe::pxe::arch::ClientArch;
-use pxe::pxe::dhcp::options::{code, pxe as sub, parse_vendor_options};
+use pxe::pxe::dhcp::options::{code, parse_vendor_options, pxe as sub};
 use pxe::pxe::dhcp::packet::{DhcpPacket, MessageType, Op, MAGIC_COOKIE};
 use pxe::pxe::dhcp::proxy::{BootPolicy, ProxyDhcpServer};
 use pxe::pxe::facts::ClientFacts;
@@ -63,8 +63,10 @@ fn settings() -> ServerSettings {
 
 /// Start a proxy on ephemeral ports and hand back the one to talk to.
 async fn start() -> SocketAddr {
-    let policy =
-        Policy { rules: RuleSet::parse(RULES).expect("valid rules"), settings: settings() };
+    let policy = Policy {
+        rules: RuleSet::parse(RULES).expect("valid rules"),
+        settings: settings(),
+    };
 
     let bound = ProxyDhcpServer::new(settings(), Arc::new(policy), Arc::new(OuiDatabase::new()))
         .bind_to("127.0.0.1:0".parse().unwrap(), None)
@@ -95,7 +97,9 @@ fn discover(mac: [u8; 6], arch: u16, vendor_class: &str) -> Vec<u8> {
 }
 
 async fn ask(server: SocketAddr, datagram: &[u8]) -> Option<DhcpPacket> {
-    let client = UdpSocket::bind("127.0.0.1:0").await.expect("a client socket");
+    let client = UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("a client socket");
     client.send_to(datagram, server).await.expect("sent");
 
     let mut buffer = vec![0u8; 2048];
@@ -111,13 +115,19 @@ async fn ask(server: SocketAddr, datagram: &[u8]) -> Option<DhcpPacket> {
 async fn a_bios_machine_is_offered_the_bios_loader() {
     let server = start().await;
 
-    let reply = ask(server, &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient:Arch:00000"))
-        .await
-        .expect("a PXE client is answered");
+    let reply = ask(
+        server,
+        &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient:Arch:00000"),
+    )
+    .await
+    .expect("a PXE client is answered");
 
     assert_eq!(reply.op, Op::Reply);
     assert_eq!(reply.message_type(), Some(MessageType::Offer));
-    assert_eq!(reply.option_string(code::BOOTFILE_NAME).as_deref(), Some("undionly.kpxe"));
+    assert_eq!(
+        reply.option_string(code::BOOTFILE_NAME).as_deref(),
+        Some("undionly.kpxe")
+    );
     assert_eq!(reply.xid, 0x5afe_1234, "the client's own transaction");
 }
 
@@ -129,12 +139,19 @@ async fn a_uefi_machine_is_offered_the_uefi_loader() {
 
     let reply = ask(
         server,
-        &discover([0x18, 0x66, 0xda, 1, 2, 3], ClientArch::X64_UEFI.code(), "PXEClient:Arch:00007"),
+        &discover(
+            [0x18, 0x66, 0xda, 1, 2, 3],
+            ClientArch::X64_UEFI.code(),
+            "PXEClient:Arch:00007",
+        ),
     )
     .await
     .expect("answered");
 
-    assert_eq!(reply.option_string(code::BOOTFILE_NAME).as_deref(), Some("ipxe.efi"));
+    assert_eq!(
+        reply.option_string(code::BOOTFILE_NAME).as_deref(),
+        Some("ipxe.efi")
+    );
 }
 
 #[tokio::test]
@@ -143,9 +160,12 @@ async fn the_offer_carries_no_address_and_no_lease() {
     // server fighting the real one.
     let server = start().await;
 
-    let reply = ask(server, &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient"))
-        .await
-        .expect("answered");
+    let reply = ask(
+        server,
+        &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient"),
+    )
+    .await
+    .expect("answered");
 
     assert_eq!(reply.yiaddr, Ipv4Addr::UNSPECIFIED, "no address is offered");
     assert_eq!(reply.option(code::LEASE_TIME), None);
@@ -159,9 +179,12 @@ async fn the_offer_tells_the_client_to_stop_looking_for_a_boot_server() {
     // for the timeout — fifteen seconds, times a rack.
     let server = start().await;
 
-    let reply = ask(server, &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient"))
-        .await
-        .expect("answered");
+    let reply = ask(
+        server,
+        &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient"),
+    )
+    .await
+    .expect("answered");
 
     let vendor = reply.option(code::VENDOR_SPECIFIC).expect("PXE options");
     let parsed = parse_vendor_options(&vendor);
@@ -182,7 +205,11 @@ async fn an_ordinary_dhcp_client_gets_no_reply_at_all() {
     // answering it is how a proxy becomes a network problem.
     let server = start().await;
 
-    let reply = ask(server, &discover([0xaa, 0xbb, 0xcc, 1, 2, 3], 0, "MSFT 5.0")).await;
+    let reply = ask(
+        server,
+        &discover([0xaa, 0xbb, 0xcc, 1, 2, 3], 0, "MSFT 5.0"),
+    )
+    .await;
     assert!(reply.is_none(), "a non-PXE client should be left alone");
 }
 
@@ -191,7 +218,11 @@ async fn a_machine_the_policy_ignores_gets_no_reply_at_all() {
     // `kind = "ignore"`, reached through the real rule engine: a Cisco OUI.
     let server = start().await;
 
-    let reply = ask(server, &discover([0x00, 0x00, 0x0c, 1, 2, 3], 0, "PXEClient")).await;
+    let reply = ask(
+        server,
+        &discover([0x00, 0x00, 0x0c, 1, 2, 3], 0, "PXEClient"),
+    )
+    .await;
     assert!(reply.is_none(), "the policy said to stay quiet");
 }
 
@@ -207,9 +238,12 @@ async fn a_datagram_that_is_not_dhcp_is_ignored_without_crashing_the_listener() 
     }
 
     // Still answering afterwards.
-    let reply = ask(server, &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient"))
-        .await
-        .expect("the listener survived");
+    let reply = ask(
+        server,
+        &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient"),
+    )
+    .await
+    .expect("the listener survived");
     assert_eq!(reply.message_type(), Some(MessageType::Offer));
 }
 
@@ -225,8 +259,11 @@ async fn a_packet_with_an_option_longer_than_the_buffer_does_not_take_the_server
     let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client.send_to(&malformed, server).await.unwrap();
 
-    let reply = ask(server, &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient"))
-        .await
-        .expect("the listener survived");
+    let reply = ask(
+        server,
+        &discover([0x18, 0x66, 0xda, 1, 2, 3], 0, "PXEClient"),
+    )
+    .await
+    .expect("the listener survived");
     assert_eq!(reply.message_type(), Some(MessageType::Offer));
 }

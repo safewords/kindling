@@ -212,7 +212,9 @@ impl DhcpPacket {
         // carry options when the option block ran out of room. Firmware that
         // does this is rare and the packets it produces are otherwise
         // undecodable, so it is worth the fifteen lines.
-        if let Some(overload) = packet.option(code::OPTION_OVERLOAD).and_then(|v| v.first().copied())
+        if let Some(overload) = packet
+            .option(code::OPTION_OVERLOAD)
+            .and_then(|v| v.first().copied())
         {
             let mut extra = Vec::new();
             if overload & 0x01 != 0 {
@@ -234,7 +236,9 @@ impl DhcpPacket {
     pub fn option(&self, code: u8) -> Option<Vec<u8>> {
         let mut joined: Option<Vec<u8>> = None;
         for option in self.options.iter().filter(|option| option.code == code) {
-            joined.get_or_insert_with(Vec::new).extend_from_slice(&option.data);
+            joined
+                .get_or_insert_with(Vec::new)
+                .extend_from_slice(&option.data);
         }
         joined
     }
@@ -256,10 +260,11 @@ impl DhcpPacket {
         } else {
             // A non-Ethernet client, or one lying about its address length.
             // Some firmware also puts the address in option 61 instead.
-            self.option(code::CLIENT_IDENTIFIER).and_then(|id| match id.split_first() {
-                Some((1, rest)) => crate::pxe::mac::MacAddr::from_bytes(rest),
-                _ => None,
-            })
+            self.option(code::CLIENT_IDENTIFIER)
+                .and_then(|id| match id.split_first() {
+                    Some((1, rest)) => crate::pxe::mac::MacAddr::from_bytes(rest),
+                    _ => None,
+                })
         }
     }
 
@@ -281,7 +286,8 @@ impl DhcpPacket {
     /// The options the client asked for (option 55), in its order of
     /// preference.
     pub fn parameter_request_list(&self) -> Vec<u8> {
-        self.option(code::PARAMETER_REQUEST_LIST).unwrap_or_default()
+        self.option(code::PARAMETER_REQUEST_LIST)
+            .unwrap_or_default()
     }
 
     pub fn set_option(&mut self, code: u8, data: impl Into<Vec<u8>>) {
@@ -354,7 +360,9 @@ fn decode_options(bytes: &[u8]) -> Vec<DhcpOption> {
             code::PAD => index += 1,
             code::END => break,
             option_code => {
-                let Some(&length) = bytes.get(index + 1) else { break };
+                let Some(&length) = bytes.get(index + 1) else {
+                    break;
+                };
                 let start = index + 2;
                 let end = start + length as usize;
                 // A length that runs off the end of the buffer is where a
@@ -363,7 +371,10 @@ fn decode_options(bytes: &[u8]) -> Vec<DhcpOption> {
                 if end > bytes.len() {
                     break;
                 }
-                options.push(DhcpOption { code: option_code, data: bytes[start..end].to_vec() });
+                options.push(DhcpOption {
+                    code: option_code,
+                    data: bytes[start..end].to_vec(),
+                });
                 index = end;
             }
         }
@@ -376,7 +387,10 @@ fn ipv4(bytes: &[u8]) -> Ipv4Addr {
 }
 
 fn trim_nul(bytes: &[u8]) -> Vec<u8> {
-    let end = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
     bytes[..end].to_vec()
 }
 
@@ -418,7 +432,10 @@ mod tests {
         assert_eq!(packet.xid, 0xdead_beef);
         assert!(packet.wants_broadcast());
         assert_eq!(packet.message_type(), Some(MessageType::Discover));
-        assert_eq!(packet.client_mac().unwrap().to_string(), "18:66:da:11:22:33");
+        assert_eq!(
+            packet.client_mac().unwrap().to_string(),
+            "18:66:da:11:22:33"
+        );
         assert_eq!(
             packet.option_string(code::VENDOR_CLASS).as_deref(),
             Some("PXEClient:Arch:00007:UNDI:003001")
@@ -429,8 +446,14 @@ mod tests {
     fn a_truncated_packet_is_refused_rather_than_read_past() {
         // The whole decoder exists on the far side of an unauthenticated UDP
         // socket, so this is the test that matters most.
-        assert!(matches!(DhcpPacket::decode(&[]), Err(DecodeError::TooShort(0))));
-        assert!(matches!(DhcpPacket::decode(&[0u8; 100]), Err(DecodeError::TooShort(100))));
+        assert!(matches!(
+            DhcpPacket::decode(&[]),
+            Err(DecodeError::TooShort(0))
+        ));
+        assert!(matches!(
+            DhcpPacket::decode(&[0u8; 100]),
+            Err(DecodeError::TooShort(100))
+        ));
     }
 
     #[test]
@@ -447,7 +470,11 @@ mod tests {
         bytes.extend_from_slice(&[60, 200, b'x']); // says 200 bytes, supplies 1
 
         let packet = DhcpPacket::decode(&bytes).expect("the header is still valid");
-        assert_eq!(packet.message_type(), Some(MessageType::Discover), "earlier options survive");
+        assert_eq!(
+            packet.message_type(),
+            Some(MessageType::Discover),
+            "earlier options survive"
+        );
     }
 
     #[test]
@@ -466,7 +493,11 @@ mod tests {
 
     #[test]
     fn a_reply_round_trips() {
-        let mut reply = DhcpPacket { op: Op::Reply, xid: 42, ..Default::default() };
+        let mut reply = DhcpPacket {
+            op: Op::Reply,
+            xid: 42,
+            ..Default::default()
+        };
         reply.chaddr[..6].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
         reply.file = b"ipxe.efi".to_vec();
         reply.set_option(code::MESSAGE_TYPE, vec![MessageType::Offer.as_byte()]);
@@ -479,7 +510,10 @@ mod tests {
         assert_eq!(decoded.xid, 42);
         assert_eq!(decoded.message_type(), Some(MessageType::Offer));
         assert_eq!(String::from_utf8(decoded.file.clone()).unwrap(), "ipxe.efi");
-        assert_eq!(decoded.option_string(code::VENDOR_CLASS).as_deref(), Some("PXEClient"));
+        assert_eq!(
+            decoded.option_string(code::VENDOR_CLASS).as_deref(),
+            Some("PXEClient")
+        );
     }
 
     #[test]
@@ -500,7 +534,11 @@ mod tests {
         let encoded = reply.encode(MIN_LEN + 10);
         let decoded = DhcpPacket::decode(&encoded).unwrap();
         assert_eq!(decoded.message_type(), Some(MessageType::Offer));
-        assert_eq!(decoded.option(43), None, "it was dropped rather than truncated");
+        assert_eq!(
+            decoded.option(43),
+            None,
+            "it was dropped rather than truncated"
+        );
     }
 
     #[test]
@@ -521,7 +559,11 @@ mod tests {
         bytes.push(code::END);
 
         let packet = DhcpPacket::decode(&bytes).unwrap();
-        assert_eq!(packet.max_message_size(), 1472, "a client asking for 64KB gets a frame");
+        assert_eq!(
+            packet.max_message_size(),
+            1472,
+            "a client asking for 64KB gets a frame"
+        );
     }
 
     #[test]
@@ -532,11 +574,24 @@ mod tests {
         bytes[2] = 0;
         bytes.extend_from_slice(&MAGIC_COOKIE);
         bytes.extend_from_slice(&[code::MESSAGE_TYPE, 1, 1]);
-        bytes.extend_from_slice(&[code::CLIENT_IDENTIFIER, 7, 1, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
+        bytes.extend_from_slice(&[
+            code::CLIENT_IDENTIFIER,
+            7,
+            1,
+            0xaa,
+            0xbb,
+            0xcc,
+            0xdd,
+            0xee,
+            0xff,
+        ]);
         bytes.push(code::END);
 
         let packet = DhcpPacket::decode(&bytes).unwrap();
-        assert_eq!(packet.client_mac().unwrap().to_string(), "aa:bb:cc:dd:ee:ff");
+        assert_eq!(
+            packet.client_mac().unwrap().to_string(),
+            "aa:bb:cc:dd:ee:ff"
+        );
     }
 
     #[test]
@@ -559,6 +614,9 @@ mod tests {
 
         let packet = DhcpPacket::decode(&bytes).unwrap();
         assert_eq!(packet.option_string(77).as_deref(), Some("iPXE"));
-        assert!(packet.file.is_empty(), "the field held options, not a file name");
+        assert!(
+            packet.file.is_empty(),
+            "the field held options, not a file name"
+        );
     }
 }

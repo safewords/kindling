@@ -52,7 +52,10 @@ impl std::str::FromStr for OuiPrefix {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cleaned: String = s.chars().filter(|c| !matches!(c, ':' | '-' | '.' | ' ')).collect();
+        let cleaned: String = s
+            .chars()
+            .filter(|c| !matches!(c, ':' | '-' | '.' | ' '))
+            .collect();
         if cleaned.len() != 6 || !cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(format!(
                 "`{s}` is not an OUI: expected three octets like `18:66:da`"
@@ -95,8 +98,11 @@ pub struct TimeWindow {
 /// Written as the pair it was read as, `["22:00", "06:00"]`.
 impl Serialize for TimeWindow {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        [self.from.format("%H:%M").to_string(), self.to.format("%H:%M").to_string()]
-            .serialize(serializer)
+        [
+            self.from.format("%H:%M").to_string(),
+            self.to.format("%H:%M").to_string(),
+        ]
+        .serialize(serializer)
     }
 }
 
@@ -115,7 +121,10 @@ impl TryFrom<TimeWindowSpec> for TimeWindow {
             TimeWindowSpec::Pair([from, to]) => (from, to),
             TimeWindowSpec::Table { from, to } => (from, to),
         };
-        Ok(TimeWindow { from: parse_time(&from)?, to: parse_time(&to)? })
+        Ok(TimeWindow {
+            from: parse_time(&from)?,
+            to: parse_time(&to)?,
+        })
     }
 }
 
@@ -142,7 +151,12 @@ impl TimeWindow {
 
 impl fmt::Display for TimeWindow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}–{}", self.from.format("%H:%M"), self.to.format("%H:%M"))
+        write!(
+            f,
+            "{}–{}",
+            self.from.format("%H:%M"),
+            self.to.format("%H:%M")
+        )
     }
 }
 
@@ -343,7 +357,9 @@ pub struct LoadError {
 
 impl LoadError {
     pub fn one(problem: impl Into<String>) -> Self {
-        Self { problems: vec![problem.into()] }
+        Self {
+            problems: vec![problem.into()],
+        }
     }
 }
 
@@ -416,7 +432,9 @@ impl Default for RuleSet {
 /// What a name used in a URL and an iPXE menu may contain.
 fn is_plain_name(name: &str) -> bool {
     !name.is_empty()
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
 impl RuleSet {
@@ -428,16 +446,22 @@ impl RuleSet {
     /// A policy file, TOML or JSON by its extension.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, LoadError> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path).map_err(|e| {
-            LoadError::one(format!("could not read `{}`: {e}", path.display()))
-        })?;
-        let document = if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("json")) {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| LoadError::one(format!("could not read `{}`: {e}", path.display())))?;
+        let document = if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
             PolicyDocument::from_json(&text)
         } else {
             PolicyDocument::from_toml(&text)
         }
         .map_err(|e| LoadError {
-            problems: e.problems.into_iter().map(|p| format!("`{}`: {p}", path.display())).collect(),
+            problems: e
+                .problems
+                .into_iter()
+                .map(|p| format!("`{}`: {p}", path.display()))
+                .collect(),
         })?;
         Self::from_document(document, Origin::File(path.to_path_buf()))
     }
@@ -455,7 +479,9 @@ impl RuleSet {
         // database holds is the whole policy and not a pointer to a file on
         // one machine's disk.
         for (name, profile) in document.profiles.iter_mut() {
-            let Some(relative) = profile.script_file.clone() else { continue };
+            let Some(relative) = profile.script_file.clone() else {
+                continue;
+            };
             match &origin {
                 Origin::File(path) => {
                     let path = path.parent().unwrap_or(Path::new(".")).join(&relative);
@@ -513,7 +539,11 @@ impl RuleSet {
         let mut compiled = Vec::with_capacity(document.rules.len());
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for rule in &document.rules {
-            let label = if rule.name.trim().is_empty() { "(unnamed)" } else { rule.name.as_str() };
+            let label = if rule.name.trim().is_empty() {
+                "(unnamed)"
+            } else {
+                rule.name.as_str()
+            };
             if rule.name.trim().is_empty() {
                 problems.push("a rule has no name; every rule needs one to appear in a log".into());
             } else if rule.name != rule.name.trim() || rule.name.contains('/') {
@@ -558,7 +588,10 @@ impl RuleSet {
             }
 
             let when = rule.when.compile(&format!("rule `{label}` when"));
-            let unless = rule.unless.as_ref().map(|c| c.compile(&format!("rule `{label}` unless")));
+            let unless = rule
+                .unless
+                .as_ref()
+                .map(|c| c.compile(&format!("rule `{label}` unless")));
             match (when, unless.transpose()) {
                 (Ok(when), Ok(unless)) => compiled.push((when, unless)),
                 (when, unless) => {
@@ -598,8 +631,14 @@ impl RuleSet {
         let mut compiled_by_index: Vec<Option<(Compiled, Option<Compiled>)>> =
             compiled.into_iter().map(Some).collect();
 
-        let rules = order.iter().filter_map(|&i| rules_by_index[i].take()).collect();
-        let compiled = order.iter().filter_map(|&i| compiled_by_index[i].take()).collect();
+        let rules = order
+            .iter()
+            .filter_map(|&i| rules_by_index[i].take())
+            .collect();
+        let compiled = order
+            .iter()
+            .filter_map(|&i| compiled_by_index[i].take())
+            .collect();
 
         Ok(Self {
             settings: document.settings,
@@ -690,22 +729,36 @@ impl RuleSet {
 
         for (rule, (when, unless)) in self.rules.iter().zip(&self.compiled) {
             if !rule.enabled {
-                evaluation.trace.push(Trace { rule: rule.name.clone(), outcome: TraceOutcome::Disabled });
+                evaluation.trace.push(Trace {
+                    rule: rule.name.clone(),
+                    outcome: TraceOutcome::Disabled,
+                });
                 continue;
             }
 
-            let scope = Scope { facts, tags: &tags, vars: &vars, offset_minutes: offset };
+            let scope = Scope {
+                facts,
+                tags: &tags,
+                vars: &vars,
+                offset_minutes: offset,
+            };
 
             if let Some(miss) = when.mismatch(&scope) {
                 evaluation.trace.push(Trace {
                     rule: rule.name.clone(),
-                    outcome: TraceOutcome::NoMatch { field: miss.field, detail: miss.detail },
+                    outcome: TraceOutcome::NoMatch {
+                        field: miss.field,
+                        detail: miss.detail,
+                    },
                 });
                 continue;
             }
 
             if unless.as_ref().is_some_and(|unless| unless.matches(&scope)) {
-                evaluation.trace.push(Trace { rule: rule.name.clone(), outcome: TraceOutcome::Excluded });
+                evaluation.trace.push(Trace {
+                    rule: rule.name.clone(),
+                    outcome: TraceOutcome::Excluded,
+                });
                 continue;
             }
 
@@ -716,11 +769,15 @@ impl RuleSet {
                 if !contains(&evaluation.tags, tag) {
                     evaluation.tags.push(tag.clone());
                 }
-                evaluation.removed_tags.retain(|held| !held.eq_ignore_ascii_case(tag));
+                evaluation
+                    .removed_tags
+                    .retain(|held| !held.eq_ignore_ascii_case(tag));
             }
             for tag in &rule.remove_tags {
                 tags.retain(|held| !held.eq_ignore_ascii_case(tag));
-                evaluation.tags.retain(|held| !held.eq_ignore_ascii_case(tag));
+                evaluation
+                    .tags
+                    .retain(|held| !held.eq_ignore_ascii_case(tag));
                 if !contains(&evaluation.removed_tags, tag) {
                     evaluation.removed_tags.push(tag.clone());
                 }
@@ -753,7 +810,9 @@ impl RuleSet {
         evaluation.vars = vars;
 
         if evaluation.profile.is_none() {
-            evaluation.profile.clone_from(&self.settings.default_profile);
+            evaluation
+                .profile
+                .clone_from(&self.settings.default_profile);
             evaluation.used_default = evaluation.profile.is_some();
         }
 
@@ -920,8 +979,7 @@ profile = "winpe"
     }
 
     fn facts(mac: &str, arch: ClientArch) -> ClientFacts {
-        ClientFacts::new(mac.parse().unwrap(), arch, Stage::Ipxe)
-            .identified(&OuiDatabase::new())
+        ClientFacts::new(mac.parse().unwrap(), arch, Stage::Ipxe).identified(&OuiDatabase::new())
     }
 
     fn json_rules(document: serde_json::Value) -> RuleSet {
@@ -934,7 +992,11 @@ profile = "winpe"
         assert_eq!(rules.rules()[0].name, "virtual-machines-never-get-windows");
         assert_eq!(rules.profiles().len(), 4);
         assert_eq!(rules.bootloader_for("bios"), Some("ipxe/undionly.kpxe"));
-        assert_eq!(rules.bootloader_for("arm64-uefi"), Some("ipxe/ipxe.efi"), "falls back");
+        assert_eq!(
+            rules.bootloader_for("arm64-uefi"),
+            Some("ipxe/ipxe.efi"),
+            "falls back"
+        );
     }
 
     #[test]
@@ -942,7 +1004,11 @@ profile = "winpe"
         let decision = rules().evaluate(&facts("18:66:da:11:22:33", ClientArch::X64_UEFI));
         assert_eq!(decision.profile.as_deref(), Some("winpe"));
         assert_eq!(decision.matched, vec!["dell-workstations"]);
-        assert!(decision.reason().contains("dell-workstations"), "{}", decision.reason());
+        assert!(
+            decision.reason().contains("dell-workstations"),
+            "{}",
+            decision.reason()
+        );
     }
 
     #[test]
@@ -958,13 +1024,16 @@ profile = "winpe"
         dell.tags = vec!["keep".into()];
 
         let decision = rules().evaluate(&dell);
-        assert_eq!(decision.profile.as_deref(), Some("menu"), "falls through to the default");
+        assert_eq!(
+            decision.profile.as_deref(),
+            Some("menu"),
+            "falls through to the default"
+        );
         assert!(decision.used_default);
         assert!(decision
             .trace
             .iter()
-            .any(|t| t.rule == "dell-workstations"
-                && matches!(t.outcome, TraceOutcome::Excluded)));
+            .any(|t| t.rule == "dell-workstations" && matches!(t.outcome, TraceOutcome::Excluded)));
     }
 
     #[test]
@@ -984,14 +1053,23 @@ profile = "winpe"
         dell.client_ip = Some("10.20.1.5".parse().unwrap());
 
         let decision = rules().evaluate(&dell);
-        assert_eq!(decision.matched.first().map(String::as_str), Some("tag-the-lab"));
+        assert_eq!(
+            decision.matched.first().map(String::as_str),
+            Some("tag-the-lab")
+        );
         assert_eq!(decision.chosen_by.as_deref(), Some("dell-workstations"));
         assert!(
-            decision.reason().starts_with("rule `dell-workstations` chose `winpe`"),
+            decision
+                .reason()
+                .starts_with("rule `dell-workstations` chose `winpe`"),
             "{}",
             decision.reason()
         );
-        assert!(decision.reason().contains("also fired: tag-the-lab"), "{}", decision.reason());
+        assert!(
+            decision.reason().contains("also fired: tag-the-lab"),
+            "{}",
+            decision.reason()
+        );
     }
 
     #[test]
@@ -1019,7 +1097,11 @@ profile = "winpe"
         let decision = rules().evaluate(&stranger);
         assert_eq!(decision.profile.as_deref(), Some("menu"));
         assert!(decision.used_default);
-        assert!(decision.reason().contains("default"), "{}", decision.reason());
+        assert!(
+            decision.reason().contains("default"),
+            "{}",
+            decision.reason()
+        );
     }
 
     #[test]
@@ -1037,7 +1119,10 @@ profile = "realy"
         )
         .unwrap_err();
         assert!(error.to_string().contains("`realy`"), "{error}");
-        assert!(error.to_string().contains("real"), "it lists what does exist: {error}");
+        assert!(
+            error.to_string().contains("real"),
+            "it lists what does exist: {error}"
+        );
     }
 
     #[test]
@@ -1167,13 +1252,26 @@ profile = "local"
         .unwrap();
 
         let at = |hour: u32| {
-            facts("aa:bb:cc:dd:ee:ff", ClientArch::BIOS)
-                .at(chrono::Utc.with_ymd_and_hms(2026, 9, 21, hour, 0, 0).unwrap())
+            facts("aa:bb:cc:dd:ee:ff", ClientArch::BIOS).at(chrono::Utc
+                .with_ymd_and_hms(2026, 9, 21, hour, 0, 0)
+                .unwrap())
         };
 
-        assert_eq!(rules.evaluate(&at(23)).profile.as_deref(), Some("reimage"), "23:00 is inside");
-        assert_eq!(rules.evaluate(&at(2)).profile.as_deref(), Some("reimage"), "02:00 wraps");
-        assert_eq!(rules.evaluate(&at(12)).profile.as_deref(), Some("local"), "noon is outside");
+        assert_eq!(
+            rules.evaluate(&at(23)).profile.as_deref(),
+            Some("reimage"),
+            "23:00 is inside"
+        );
+        assert_eq!(
+            rules.evaluate(&at(2)).profile.as_deref(),
+            Some("reimage"),
+            "02:00 wraps"
+        );
+        assert_eq!(
+            rules.evaluate(&at(12)).profile.as_deref(),
+            Some("local"),
+            "noon is outside"
+        );
     }
 
     #[test]
@@ -1191,9 +1289,18 @@ when = { oui = ["18-66-DA", "b083fe"] }
         )
         .unwrap();
 
-        assert!(!rules.evaluate(&facts("18:66:da:00:00:01", ClientArch::BIOS)).matched.is_empty());
-        assert!(!rules.evaluate(&facts("b0:83:fe:00:00:01", ClientArch::BIOS)).matched.is_empty());
-        assert!(rules.evaluate(&facts("aa:bb:cc:00:00:01", ClientArch::BIOS)).matched.is_empty());
+        assert!(!rules
+            .evaluate(&facts("18:66:da:00:00:01", ClientArch::BIOS))
+            .matched
+            .is_empty());
+        assert!(!rules
+            .evaluate(&facts("b0:83:fe:00:00:01", ClientArch::BIOS))
+            .matched
+            .is_empty());
+        assert!(rules
+            .evaluate(&facts("aa:bb:cc:00:00:01", ClientArch::BIOS))
+            .matched
+            .is_empty());
     }
 
     #[test]
@@ -1221,7 +1328,10 @@ profile = "second"
         assert_eq!(decision.profile.as_deref(), Some("first"));
         assert!(decision.trace.iter().any(|t| matches!(
             &t.outcome,
-            TraceOutcome::Matched { superseded: true, .. }
+            TraceOutcome::Matched {
+                superseded: true,
+                ..
+            }
         )));
     }
 
@@ -1247,7 +1357,10 @@ profile = "second"
 
         let decision = rules.evaluate(&facts("18:66:da:11:22:33", ClientArch::X64_UEFI));
         assert_eq!(decision.profile.as_deref(), Some("storage"));
-        assert_eq!(decision.vars.get("role").map(String::as_str), Some("storage"));
+        assert_eq!(
+            decision.vars.get("role").map(String::as_str),
+            Some("storage")
+        );
 
         let other = rules.evaluate(&facts("aa:bb:cc:11:22:33", ClientArch::X64_UEFI));
         assert_eq!(other.profile.as_deref(), Some("local"));
@@ -1270,7 +1383,11 @@ profile = "second"
         let decision = rules.evaluate(&machine);
 
         assert_eq!(decision.removed_tags, vec!["hold", "released"]);
-        assert!(decision.tags.is_empty(), "the later rule saw the tag gone: {:?}", decision.tags);
+        assert!(
+            decision.tags.is_empty(),
+            "the later rule saw the tag gone: {:?}",
+            decision.tags
+        );
     }
 
     #[test]
@@ -1279,11 +1396,18 @@ profile = "second"
         let json = serde_json::to_string(&original).unwrap();
         let back = PolicyDocument::from_json(&json).unwrap();
         assert_eq!(back, original);
-        assert!(json.contains("\"rules\""), "the JSON form says `rules`: {json}");
+        assert!(
+            json.contains("\"rules\""),
+            "the JSON form says `rules`: {json}"
+        );
 
         // And the TOML export reads back to the same thing.
         let toml = original.to_toml().unwrap();
-        assert_eq!(PolicyDocument::from_toml(&toml).unwrap(), original, "{toml}");
+        assert_eq!(
+            PolicyDocument::from_toml(&toml).unwrap(),
+            original,
+            "{toml}"
+        );
     }
 
     #[test]

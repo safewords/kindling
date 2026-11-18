@@ -131,7 +131,11 @@ impl ServiceProvider for PxeServiceProvider {
 
         // Said once, at boot, where it can still be acted on. The endpoints
         // themselves fail closed, so this is a warning and not an error.
-        if settings.get_or(PXE_API_TOKEN, String::new()).trim().is_empty() {
+        if settings
+            .get_or(PXE_API_TOKEN, String::new())
+            .trim()
+            .is_empty()
+        {
             tracing::warn!(
                 "PXE_API_TOKEN is not set, so the endpoints that pin machines and reload the \
                  policy are closed. Reading the inventory still works."
@@ -145,7 +149,9 @@ impl ServiceProvider for PxeServiceProvider {
 /// `migrate` running the migrations twice would be harmless but confusing, and
 /// `migrate:rollback` running them first would undo its own work.
 fn running_a_migration_command() -> bool {
-    std::env::args().nth(1).is_some_and(|command| command.starts_with("migrate"))
+    std::env::args()
+        .nth(1)
+        .is_some_and(|command| command.starts_with("migrate"))
 }
 
 /// The built-in vendor table, plus a file if one was named.

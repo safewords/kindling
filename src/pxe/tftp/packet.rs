@@ -113,11 +113,15 @@ pub fn decode(bytes: &[u8]) -> Result<Packet, DecodeError> {
     match opcode {
         OP_RRQ | OP_WRQ => {
             let mut fields = split_nul(rest);
-            let filename = fields.next().ok_or(DecodeError::Malformed("no file name"))?;
+            let filename = fields
+                .next()
+                .ok_or(DecodeError::Malformed("no file name"))?;
             if opcode == OP_WRQ {
                 return Ok(Packet::Write { filename });
             }
-            let mode = fields.next().ok_or(DecodeError::Malformed("no transfer mode"))?;
+            let mode = fields
+                .next()
+                .ok_or(DecodeError::Malformed("no transfer mode"))?;
 
             // Options come in name/value pairs. An odd trailing name with no
             // value is malformed, and dropping it is friendlier than refusing
@@ -127,7 +131,11 @@ pub fn decode(bytes: &[u8]) -> Result<Packet, DecodeError> {
                 options.insert(name.to_lowercase(), value);
             }
 
-            Ok(Packet::Read(ReadRequest { filename, mode, options }))
+            Ok(Packet::Read(ReadRequest {
+                filename,
+                mode,
+                options,
+            }))
         }
         OP_DATA => {
             if rest.len() < 2 {
@@ -142,14 +150,19 @@ pub fn decode(bytes: &[u8]) -> Result<Packet, DecodeError> {
             if rest.len() < 2 {
                 return Err(DecodeError::TooShort);
             }
-            Ok(Packet::Ack { block: u16::from_be_bytes([rest[0], rest[1]]) })
+            Ok(Packet::Ack {
+                block: u16::from_be_bytes([rest[0], rest[1]]),
+            })
         }
         OP_ERROR => {
             if rest.len() < 2 {
                 return Err(DecodeError::TooShort);
             }
             let message = split_nul(&rest[2..]).next().unwrap_or_default();
-            Ok(Packet::Error { code: u16::from_be_bytes([rest[0], rest[1]]), message })
+            Ok(Packet::Error {
+                code: u16::from_be_bytes([rest[0], rest[1]]),
+                message,
+            })
         }
         OP_OACK => {
             let mut fields = split_nul(rest);
@@ -221,7 +234,10 @@ pub fn normalise_filename(filename: &str) -> String {
     // as the boot file, and firmware then asks for that whole string by name.
     // The host is necessarily this server, so what matters is the path.
     if name.len() > 7 && name[..7].eq_ignore_ascii_case("tftp://") {
-        name = name[7..].split_once('/').map(|(_, path)| path.to_string()).unwrap_or_default();
+        name = name[7..]
+            .split_once('/')
+            .map(|(_, path)| path.to_string())
+            .unwrap_or_default();
     }
     name.trim_start_matches('/').to_string()
 }
@@ -261,7 +277,9 @@ mod tests {
         // RFC 2347 says the names are case-insensitive, and firmware takes
         // that literally: `blksize`, `BLKSIZE` and `BlkSize` all appear.
         let bytes = rrq("ipxe.efi", "OCTET", &[("BLKSIZE", "1468"), ("tsize", "0")]);
-        let Packet::Read(request) = decode(&bytes).unwrap() else { panic!("a read request") };
+        let Packet::Read(request) = decode(&bytes).unwrap() else {
+            panic!("a read request")
+        };
 
         assert_eq!(request.option_u64("blksize"), Some(1468));
         assert_eq!(request.option_u64("tsize"), Some(0));
@@ -272,7 +290,9 @@ mod tests {
     fn a_trailing_option_with_no_value_is_dropped_rather_than_fatal() {
         let mut bytes = rrq("f", "octet", &[]);
         bytes.extend_from_slice(b"blksize\0");
-        let Packet::Read(request) = decode(&bytes).unwrap() else { panic!("a read request") };
+        let Packet::Read(request) = decode(&bytes).unwrap() else {
+            panic!("a read request")
+        };
         assert!(request.options.is_empty());
     }
 
@@ -293,7 +313,13 @@ mod tests {
     #[test]
     fn a_data_packet_round_trips() {
         let encoded = data(7, b"hello");
-        assert_eq!(decode(&encoded).unwrap(), Packet::Data { block: 7, data: b"hello".to_vec() });
+        assert_eq!(
+            decode(&encoded).unwrap(),
+            Packet::Data {
+                block: 7,
+                data: b"hello".to_vec()
+            }
+        );
     }
 
     #[test]
@@ -301,7 +327,10 @@ mod tests {
         let encoded = error(ErrorCode::FileNotFound, "no such file");
         assert_eq!(
             decode(&encoded).unwrap(),
-            Packet::Error { code: 1, message: "no such file".into() }
+            Packet::Error {
+                code: 1,
+                message: "no such file".into()
+            }
         );
     }
 
@@ -328,14 +357,24 @@ mod tests {
                 out
             })
             .unwrap(),
-            Packet::Write { filename: "evil.bin".into() }
+            Packet::Write {
+                filename: "evil.bin".into()
+            }
         );
     }
 
     #[test]
     fn firmware_spellings_of_a_path_all_mean_the_same_file() {
-        for spelling in ["\\ipxe\\undionly.kpxe", "/ipxe/undionly.kpxe", "ipxe/undionly.kpxe"] {
-            assert_eq!(normalise_filename(spelling), "ipxe/undionly.kpxe", "{spelling}");
+        for spelling in [
+            "\\ipxe\\undionly.kpxe",
+            "/ipxe/undionly.kpxe",
+            "ipxe/undionly.kpxe",
+        ] {
+            assert_eq!(
+                normalise_filename(spelling),
+                "ipxe/undionly.kpxe",
+                "{spelling}"
+            );
         }
     }
 }
@@ -347,7 +386,10 @@ mod url_filename_tests {
     #[test]
     fn a_full_tftp_url_as_the_file_name_means_its_path() {
         assert_eq!(normalise_filename("tftp://10.0.1.109/ipxe.efi"), "ipxe.efi");
-        assert_eq!(normalise_filename("TFTP://boot.lan//images/a.efi"), "images/a.efi");
+        assert_eq!(
+            normalise_filename("TFTP://boot.lan//images/a.efi"),
+            "images/a.efi"
+        );
         assert_eq!(normalise_filename("tftp://10.0.1.109"), "");
         assert_eq!(normalise_filename("/ipxe.efi"), "ipxe.efi");
     }

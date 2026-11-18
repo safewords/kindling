@@ -49,11 +49,24 @@ mod tests {
 
     #[test]
     fn the_module_prefix_matches_the_migration_name() {
-        for (module, name) in ["m0001_create_hosts", "m0002_create_boot_events", "m0003_create_policy_rules", "m0004_create_policy_profiles", "m0005_create_policy_bootloaders", "m0006_create_policy_settings", "m0007_create_policy_revisions", "m0008_create_rule_templates"]
-            .iter()
-            .zip(all().names())
+        for (module, name) in [
+            "m0001_create_hosts",
+            "m0002_create_boot_events",
+            "m0003_create_policy_rules",
+            "m0004_create_policy_profiles",
+            "m0005_create_policy_bootloaders",
+            "m0006_create_policy_settings",
+            "m0007_create_policy_revisions",
+            "m0008_create_rule_templates",
+        ]
+        .iter()
+        .zip(all().names())
         {
-            assert_eq!(module.trim_start_matches('m'), name, "`{module}.rs` declares `{name}`");
+            assert_eq!(
+                module.trim_start_matches('m'),
+                name,
+                "`{module}.rs` declares `{name}`"
+            );
         }
     }
 

@@ -68,7 +68,11 @@ impl PartialEq for DhcpPacket {
 impl Eq for DhcpPacket {}
 
 /// Read everything a rule might match on out of a DHCP packet.
-pub fn facts_from_packet(packet: &DhcpPacket, source: SocketAddr, ouis: &OuiDatabase) -> Option<ClientFacts> {
+pub fn facts_from_packet(
+    packet: &DhcpPacket,
+    source: SocketAddr,
+    ouis: &OuiDatabase,
+) -> Option<ClientFacts> {
     let mac = packet.client_mac()?;
 
     let arch = packet
@@ -93,10 +97,22 @@ pub fn facts_from_packet(packet: &DhcpPacket, source: SocketAddr, ouis: &OuiData
     Some(
         ClientFacts::new(mac, arch, Stage::Firmware)
             .with_vendor_class(packet.option_string(code::VENDOR_CLASS))
-            .with_user_class(packet.option(code::USER_CLASS).map(|value| user_class(&value)))
+            .with_user_class(
+                packet
+                    .option(code::USER_CLASS)
+                    .map(|value| user_class(&value)),
+            )
             .with_ipxe_options(packet.option(code::IPXE_ENCAP).is_some())
-            .with_hostname(packet.option_string(code::HOSTNAME).filter(|name| !name.is_empty()))
-            .with_uuid(packet.option(code::CLIENT_UUID).and_then(|value| super::options::client_uuid(&value)))
+            .with_hostname(
+                packet
+                    .option_string(code::HOSTNAME)
+                    .filter(|name| !name.is_empty()),
+            )
+            .with_uuid(
+                packet
+                    .option(code::CLIENT_UUID)
+                    .and_then(|value| super::options::client_uuid(&value)),
+            )
             .with_client_ip(client_ip)
             .with_relay_ip(relay)
             .with_transaction(Some(packet.xid))
@@ -195,12 +211,19 @@ pub fn build_reply(
     };
 
     reply.set_option(code::MESSAGE_TYPE, vec![reply_type.as_byte()]);
-    reply.set_option(code::SERVER_IDENTIFIER, settings.server_ip.octets().to_vec());
+    reply.set_option(
+        code::SERVER_IDENTIFIER,
+        settings.server_ip.octets().to_vec(),
+    );
 
     // HTTP-boot firmware checks this string and refuses a reply that does not
     // carry its own class. Echoing the class the client used is the only thing
     // that works for both.
-    let class = if answer.over_http { "HTTPClient" } else { "PXEClient" };
+    let class = if answer.over_http {
+        "HTTPClient"
+    } else {
+        "PXEClient"
+    };
     reply.set_option_string(code::VENDOR_CLASS, class);
 
     // The PXE specification requires the machine identifier to be echoed.
@@ -289,7 +312,11 @@ impl ProxyDhcpServer {
         policy: Arc<dyn BootPolicy>,
         ouis: Arc<OuiDatabase>,
     ) -> Self {
-        Self { settings, policy, ouis }
+        Self {
+            settings,
+            policy,
+            ouis,
+        }
     }
 
     /// Take both ports, without serving on either yet.
@@ -298,15 +325,11 @@ impl ProxyDhcpServer {
     /// 4011 fails at startup rather than half-working — a machine whose
     /// firmware insists on the boot server request would otherwise hang, and
     /// the hang would be blamed on the machine.
-    pub async fn bind(
-        self,
-        bind: Ipv4Addr,
-        boot_server_port: bool,
-    ) -> std::io::Result<BoundProxy> {
-        let boot = boot_server_port
-            .then(|| SocketAddr::new(IpAddr::V4(bind), BOOT_SERVER_PORT));
+    pub async fn bind(self, bind: Ipv4Addr, boot_server_port: bool) -> std::io::Result<BoundProxy> {
+        let boot = boot_server_port.then(|| SocketAddr::new(IpAddr::V4(bind), BOOT_SERVER_PORT));
 
-        self.bind_to(SocketAddr::new(IpAddr::V4(bind), SERVER_PORT), boot).await
+        self.bind_to(SocketAddr::new(IpAddr::V4(bind), SERVER_PORT), boot)
+            .await
     }
 
     /// Bind specific addresses rather than the well-known ports.
@@ -325,7 +348,11 @@ impl ProxyDhcpServer {
             None => None,
         };
 
-        Ok(BoundProxy { server: Arc::new(self), main: main_socket, boot: boot_socket })
+        Ok(BoundProxy {
+            server: Arc::new(self),
+            main: main_socket,
+            boot: boot_socket,
+        })
     }
 
     /// Bind and serve until the process stops.
@@ -450,9 +477,13 @@ async fn serve(
         // Spawned, because the policy asks the database and a slow query must
         // not stall the machine next to it in the rack.
         tokio::spawn(async move {
-            let Some(reply) = server.handle(&datagram, source, port).await else { return };
+            let Some(reply) = server.handle(&datagram, source, port).await else {
+                return;
+            };
 
-            let bytes = reply.packet.encode(reply.max.min(DEFAULT_MAX_MESSAGE.max(reply.max)));
+            let bytes = reply
+                .packet
+                .encode(reply.max.min(DEFAULT_MAX_MESSAGE.max(reply.max)));
             match socket.send_to(&bytes, reply.destination).await {
                 Ok(sent) => tracing::debug!(
                     destination = %reply.destination,
@@ -517,19 +548,33 @@ mod tests {
     fn a_discover_from_a_pxe_client_is_answered_with_an_offer_and_no_address() {
         // The defining property of a proxy: it must never look like it is
         // handing out an address, or two DHCP servers are fighting.
-        let request = request(MessageType::Discover, Some("PXEClient:Arch:00007:UNDI:003001"));
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("ipxe.efi", false)), &settings())
-        else {
+        let request = request(
+            MessageType::Discover,
+            Some("PXEClient:Arch:00007:UNDI:003001"),
+        );
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("ipxe.efi", false)),
+            &settings(),
+        ) else {
             panic!("a PXE DISCOVER should be answered");
         };
 
         assert_eq!(reply.packet.message_type(), Some(MessageType::Offer));
-        assert_eq!(reply.packet.yiaddr, Ipv4Addr::UNSPECIFIED, "no address is offered");
+        assert_eq!(
+            reply.packet.yiaddr,
+            Ipv4Addr::UNSPECIFIED,
+            "no address is offered"
+        );
         assert_eq!(reply.packet.option(code::LEASE_TIME), None, "and no lease");
         assert_eq!(reply.packet.option(code::SUBNET_MASK), None);
         assert_eq!(reply.packet.siaddr, "10.0.0.2".parse::<Ipv4Addr>().unwrap());
-        assert_eq!(reply.packet.xid, request.xid, "the transaction is the client's");
+        assert_eq!(
+            reply.packet.xid, request.xid,
+            "the transaction is the client's"
+        );
     }
 
     #[test]
@@ -537,13 +582,25 @@ mod tests {
         // No vendor class: this machine is asking for an address, not to boot.
         let no_class = request(MessageType::Discover, None);
         assert!(matches!(
-            build_reply(&no_class, source(), SERVER_PORT, Some(&answer("ipxe.efi", false)), &settings()),
+            build_reply(
+                &no_class,
+                source(),
+                SERVER_PORT,
+                Some(&answer("ipxe.efi", false)),
+                &settings()
+            ),
             Disposition::NotOurs(_)
         ));
 
         let laptop = request(MessageType::Discover, Some("MSFT 5.0"));
         assert!(matches!(
-            build_reply(&laptop, source(), SERVER_PORT, Some(&answer("ipxe.efi", false)), &settings()),
+            build_reply(
+                &laptop,
+                source(),
+                SERVER_PORT,
+                Some(&answer("ipxe.efi", false)),
+                &settings()
+            ),
             Disposition::NotOurs(_)
         ));
     }
@@ -561,9 +618,13 @@ mod tests {
     fn the_boot_file_is_in_both_the_option_and_the_field_when_it_fits() {
         // Option 67 is authoritative; old firmware only reads the field.
         let request = request(MessageType::Discover, Some("PXEClient"));
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("ipxe/undionly.kpxe", false)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("ipxe/undionly.kpxe", false)),
+            &settings(),
+        ) else {
             panic!("answered")
         };
 
@@ -571,7 +632,10 @@ mod tests {
             reply.packet.option_string(code::BOOTFILE_NAME).as_deref(),
             Some("ipxe/undionly.kpxe")
         );
-        assert_eq!(String::from_utf8(reply.packet.file.clone()).unwrap(), "ipxe/undionly.kpxe");
+        assert_eq!(
+            String::from_utf8(reply.packet.file.clone()).unwrap(),
+            "ipxe/undionly.kpxe"
+        );
     }
 
     #[test]
@@ -579,20 +643,33 @@ mod tests {
         // The `file` field is 128 bytes. An HTTP boot URL routinely is not.
         let long = format!("http://10.0.0.2:8080/{}/boot.ipxe", "x".repeat(140));
         let request = request(MessageType::Discover, Some("HTTPClient:Arch:00016"));
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer(&long, true)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer(&long, true)),
+            &settings(),
+        ) else {
             panic!("answered")
         };
 
-        assert_eq!(reply.packet.option_string(code::BOOTFILE_NAME).as_deref(), Some(long.as_str()));
-        assert!(reply.packet.file.is_empty(), "truncating it into the field would be worse");
+        assert_eq!(
+            reply.packet.option_string(code::BOOTFILE_NAME).as_deref(),
+            Some(long.as_str())
+        );
+        assert!(
+            reply.packet.file.is_empty(),
+            "truncating it into the field would be worse"
+        );
     }
 
     #[test]
     fn http_boot_firmware_gets_the_vendor_class_it_checks_for() {
         // UEFI HTTP boot refuses a reply whose option 60 is not HTTPClient.
-        let request = request(MessageType::Discover, Some("HTTPClient:Arch:00016:UNDI:003001"));
+        let request = request(
+            MessageType::Discover,
+            Some("HTTPClient:Arch:00016:UNDI:003001"),
+        );
         let Disposition::Reply(reply) = build_reply(
             &request,
             source(),
@@ -603,21 +680,41 @@ mod tests {
             panic!("answered")
         };
 
-        assert_eq!(reply.packet.option_string(code::VENDOR_CLASS).as_deref(), Some("HTTPClient"));
-        assert_eq!(reply.packet.option(code::TFTP_SERVER_NAME), None, "there is no TFTP here");
+        assert_eq!(
+            reply.packet.option_string(code::VENDOR_CLASS).as_deref(),
+            Some("HTTPClient")
+        );
+        assert_eq!(
+            reply.packet.option(code::TFTP_SERVER_NAME),
+            None,
+            "there is no TFTP here"
+        );
     }
 
     #[test]
     fn tftp_boot_gets_pxeclient_and_a_tftp_server_name() {
         let request = request(MessageType::Discover, Some("PXEClient:Arch:00007"));
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("ipxe.efi", false)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("ipxe.efi", false)),
+            &settings(),
+        ) else {
             panic!("answered")
         };
 
-        assert_eq!(reply.packet.option_string(code::VENDOR_CLASS).as_deref(), Some("PXEClient"));
-        assert_eq!(reply.packet.option_string(code::TFTP_SERVER_NAME).as_deref(), Some("10.0.0.2"));
+        assert_eq!(
+            reply.packet.option_string(code::VENDOR_CLASS).as_deref(),
+            Some("PXEClient")
+        );
+        assert_eq!(
+            reply
+                .packet
+                .option_string(code::TFTP_SERVER_NAME)
+                .as_deref(),
+            Some("10.0.0.2")
+        );
     }
 
     #[test]
@@ -626,9 +723,13 @@ mod tests {
         let uuid: Vec<u8> = std::iter::once(0).chain(0..16u8).collect();
         request.set_option(code::CLIENT_UUID, uuid.clone());
 
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("ipxe.efi", false)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("ipxe.efi", false)),
+            &settings(),
+        ) else {
             panic!("answered")
         };
         assert_eq!(reply.packet.option(code::CLIENT_UUID), Some(uuid));
@@ -641,7 +742,13 @@ mod tests {
         // server in the conversation.
         let request = request(MessageType::Request, Some("PXEClient"));
         assert!(matches!(
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("ipxe.efi", false)), &settings()),
+            build_reply(
+                &request,
+                source(),
+                SERVER_PORT,
+                Some(&answer("ipxe.efi", false)),
+                &settings()
+            ),
             Disposition::NotOurs(_)
         ));
     }
@@ -653,9 +760,13 @@ mod tests {
         let mut request = request(MessageType::Request, Some("PXEClient"));
         request.set_option(code::VENDOR_SPECIFIC, vec![71, 4, 0, 0, 0, 0, 255]);
 
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("ipxe.efi", false)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("ipxe.efi", false)),
+            &settings(),
+        ) else {
             panic!("a boot server request should be answered");
         };
         assert_eq!(reply.packet.message_type(), Some(MessageType::Ack));
@@ -678,7 +789,9 @@ mod tests {
         assert_eq!(reply.packet.message_type(), Some(MessageType::Ack));
         let vendor = reply.packet.option(code::VENDOR_SPECIFIC).unwrap();
         let parsed = super::super::options::parse_vendor_options(&vendor);
-        assert!(parsed.iter().any(|(code, _)| *code == super::super::options::pxe::BOOT_ITEM));
+        assert!(parsed
+            .iter()
+            .any(|(code, _)| *code == super::super::options::pxe::BOOT_ITEM));
     }
 
     #[test]
@@ -710,7 +823,13 @@ mod tests {
     fn an_inform_on_4011_is_answered_too() {
         let request = request(MessageType::Inform, Some("PXEClient"));
         assert!(matches!(
-            build_reply(&request, source(), BOOT_SERVER_PORT, Some(&answer("f", false)), &settings()),
+            build_reply(
+                &request,
+                source(),
+                BOOT_SERVER_PORT,
+                Some(&answer("f", false)),
+                &settings()
+            ),
             Disposition::Reply(_)
         ));
     }
@@ -721,24 +840,38 @@ mod tests {
         let mut request = request(MessageType::Discover, Some("PXEClient"));
         request.giaddr = "10.20.0.1".parse().unwrap();
 
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("f", false)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("f", false)),
+            &settings(),
+        ) else {
             panic!("answered")
         };
-        assert_eq!(reply.destination, "10.20.0.1:67".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            reply.destination,
+            "10.20.0.1:67".parse::<SocketAddr>().unwrap()
+        );
         assert_eq!(reply.packet.giaddr, request.giaddr, "the relay is echoed");
     }
 
     #[test]
     fn a_client_with_no_address_yet_is_answered_by_broadcast() {
         let request = request(MessageType::Discover, Some("PXEClient"));
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("f", false)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("f", false)),
+            &settings(),
+        ) else {
             panic!("answered")
         };
-        assert_eq!(reply.destination, "255.255.255.255:68".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            reply.destination,
+            "255.255.255.255:68".parse::<SocketAddr>().unwrap()
+        );
     }
 
     #[test]
@@ -747,20 +880,33 @@ mod tests {
         request.set_option(code::VENDOR_SPECIFIC, vec![255]);
         request.ciaddr = "10.0.0.50".parse().unwrap();
 
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("f", false)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("f", false)),
+            &settings(),
+        ) else {
             panic!("answered")
         };
-        assert_eq!(reply.destination, "10.0.0.50:68".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            reply.destination,
+            "10.0.0.50:68".parse::<SocketAddr>().unwrap()
+        );
     }
 
     #[test]
     fn the_facts_come_out_of_the_packet_intact() {
-        let mut packet = request(MessageType::Discover, Some("PXEClient:Arch:00007:UNDI:003001"));
+        let mut packet = request(
+            MessageType::Discover,
+            Some("PXEClient:Arch:00007:UNDI:003001"),
+        );
         packet.set_option_string(code::HOSTNAME, "lab-01");
         packet.set_option(code::USER_CLASS, b"\x04iPXE".to_vec());
-        packet.set_option(code::CLIENT_UUID, std::iter::once(0).chain(0..16u8).collect::<Vec<_>>());
+        packet.set_option(
+            code::CLIENT_UUID,
+            std::iter::once(0).chain(0..16u8).collect::<Vec<_>>(),
+        );
 
         let facts = facts_from_packet(&packet, source(), &OuiDatabase::new()).unwrap();
         assert_eq!(facts.mac.to_string(), "18:66:da:11:22:33");
@@ -769,7 +915,10 @@ mod tests {
         assert_eq!(facts.hostname.as_deref(), Some("lab-01"));
         assert_eq!(facts.user_class.as_deref(), Some("iPXE"));
         assert!(facts.is_ipxe());
-        assert_eq!(facts.uuid.as_deref(), Some("00010203-0405-0607-0809-0a0b0c0d0e0f"));
+        assert_eq!(
+            facts.uuid.as_deref(),
+            Some("00010203-0405-0607-0809-0a0b0c0d0e0f")
+        );
         assert_eq!(facts.stage, Stage::Firmware);
     }
 
@@ -779,11 +928,15 @@ mod tests {
         // chainload chain hangs off recognising this string.
         let mut prefixed = request(MessageType::Discover, Some("PXEClient"));
         prefixed.set_option(code::USER_CLASS, b"\x04iPXE".to_vec());
-        assert!(facts_from_packet(&prefixed, source(), &OuiDatabase::new()).unwrap().is_ipxe());
+        assert!(facts_from_packet(&prefixed, source(), &OuiDatabase::new())
+            .unwrap()
+            .is_ipxe());
 
         let mut bare = request(MessageType::Discover, Some("PXEClient"));
         bare.set_option(code::USER_CLASS, b"iPXE".to_vec());
-        assert!(facts_from_packet(&bare, source(), &OuiDatabase::new()).unwrap().is_ipxe());
+        assert!(facts_from_packet(&bare, source(), &OuiDatabase::new())
+            .unwrap()
+            .is_ipxe());
     }
 
     #[test]
@@ -792,7 +945,9 @@ mod tests {
         // only ever sent by iPXE, so it is enough on its own — and without it
         // this machine would be handed iPXE by iPXE, for ever.
         let mut packet = request(MessageType::Discover, Some("PXEClient"));
-        packet.options.retain(|option| option.code != code::USER_CLASS);
+        packet
+            .options
+            .retain(|option| option.code != code::USER_CLASS);
         packet.set_option(code::IPXE_ENCAP, vec![0xb1, 1, 1, 255]);
 
         let facts = facts_from_packet(&packet, source(), &OuiDatabase::new()).unwrap();
@@ -804,7 +959,9 @@ mod tests {
     fn a_client_that_sends_no_architecture_is_taken_for_bios() {
         // Option 93 postdates PXE; only BIOS firmware omits it.
         let mut packet = request(MessageType::Discover, Some("PXEClient"));
-        packet.options.retain(|option| option.code != code::CLIENT_ARCH);
+        packet
+            .options
+            .retain(|option| option.code != code::CLIENT_ARCH);
 
         let facts = facts_from_packet(&packet, source(), &OuiDatabase::new()).unwrap();
         assert_eq!(facts.arch, ClientArch::BIOS);
@@ -815,12 +972,19 @@ mod tests {
         let mut request = request(MessageType::Discover, Some("PXEClient"));
         request.set_option(code::MAX_MESSAGE_SIZE, vec![0x01, 0x00]); // 256
 
-        let Disposition::Reply(reply) =
-            build_reply(&request, source(), SERVER_PORT, Some(&answer("ipxe.efi", false)), &settings())
-        else {
+        let Disposition::Reply(reply) = build_reply(
+            &request,
+            source(),
+            SERVER_PORT,
+            Some(&answer("ipxe.efi", false)),
+            &settings(),
+        ) else {
             panic!("answered")
         };
         assert_eq!(reply.max, 256);
-        assert!(reply.packet.encode(reply.max).len() <= 300, "padded to the BOOTP minimum, no more");
+        assert!(
+            reply.packet.encode(reply.max).len() <= 300,
+            "padded to the BOOTP minimum, no more"
+        );
     }
 }

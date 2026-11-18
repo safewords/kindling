@@ -27,14 +27,23 @@ pub fn routes(router: &mut Router) {
     // The boot endpoints first, and outside every group: they are the reason
     // this server exists, and nothing should come between a machine and its
     // script.
-    router.group(GroupAttributes::new().middleware(kernel::boot()), |router| {
-        router.get("/boot.ipxe", boot_controller::boot).name("boot");
-        router.get("/profiles/{profile}", boot_controller::profile).name("boot.profile");
-        router.get("/boot/{path*}", boot_controller::file).name("boot.file");
-    });
+    router.group(
+        GroupAttributes::new().middleware(kernel::boot()),
+        |router| {
+            router.get("/boot.ipxe", boot_controller::boot).name("boot");
+            router
+                .get("/profiles/{profile}", boot_controller::profile)
+                .name("boot.profile");
+            router
+                .get("/boot/{path*}", boot_controller::file)
+                .name("boot.file");
+        },
+    );
 
     // The built frontend.
-    router.get("/build/{path*}", asset_controller::build).name("assets");
+    router
+        .get("/build/{path*}", asset_controller::build)
+        .name("assets");
 
     router.group(GroupAttributes::new().middleware(kernel::api()), |router| {
         for (path, name) in SCREENS {

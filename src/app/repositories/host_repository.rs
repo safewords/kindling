@@ -27,7 +27,10 @@ pub struct HostRepository {
 
 impl HostRepository {
     pub fn new(database: Database) -> Self {
-        Self { inner: EntityRepository::<Host>::new(database), live: LiveFeed::new() }
+        Self {
+            inner: EntityRepository::<Host>::new(database),
+            live: LiveFeed::new(),
+        }
     }
 
     /// Announce every change made here on this feed.
@@ -89,8 +92,15 @@ impl HostRepository {
 
     /// Note that a machine booted a profile: the counter, the timestamp and
     /// the last profile, in one write.
-    pub async fn record_boot(&self, mac: MacAddr, profile: Option<&str>, at: DateTime<Utc>) -> Result<()> {
-        let Some(mut host) = self.by_mac(mac).await? else { return Ok(()) };
+    pub async fn record_boot(
+        &self,
+        mac: MacAddr,
+        profile: Option<&str>,
+        at: DateTime<Utc>,
+    ) -> Result<()> {
+        let Some(mut host) = self.by_mac(mac).await? else {
+            return Ok(());
+        };
         host.boot_count += 1;
         host.last_seen = at;
         host.last_profile = profile.map(str::to_string);
@@ -182,7 +192,9 @@ impl HostRepository {
     }
 
     pub async fn all(&self) -> Result<Vec<Host>> {
-        self.inner.matching(Criteria::new().order_by_desc("last_seen")).await
+        self.inner
+            .matching(Criteria::new().order_by_desc("last_seen"))
+            .await
     }
 
     pub async fn count(&self) -> Result<u64> {
@@ -191,18 +203,26 @@ impl HostRepository {
 
     /// Machines seen since a moment — "what booted today".
     pub async fn seen_since(&self, since: DateTime<Utc>) -> Result<u64> {
-        self.inner.count_matching(Criteria::new().where_gte("last_seen", since)).await
+        self.inner
+            .count_matching(Criteria::new().where_gte("last_seen", since))
+            .await
     }
 
     pub async fn with_pins(&self) -> Result<Vec<Host>> {
-        self.inner.matching(Criteria::new().where_not_null("pinned_profile")).await
+        self.inner
+            .matching(Criteria::new().where_not_null("pinned_profile"))
+            .await
     }
 
     pub async fn forget(&self, mac: MacAddr) -> Result<bool> {
-        let removed =
-            self.inner.delete_matching(Criteria::new().where_eq("mac", mac.to_string())).await?;
+        let removed = self
+            .inner
+            .delete_matching(Criteria::new().where_eq("mac", mac.to_string()))
+            .await?;
         if removed == 1 {
-            self.live.publish(|| LiveUpdate::HostForgotten { mac: mac.to_string() });
+            self.live.publish(|| LiveUpdate::HostForgotten {
+                mac: mac.to_string(),
+            });
         }
         Ok(removed == 1)
     }
