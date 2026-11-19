@@ -51,10 +51,11 @@ tracing = "0.1"
 # pattern cannot be written that takes a boot request hostage.
 regex = "1"
 
-# The policy lives in the database now. TOML is still read — once, to import
-# a policy file written for an older release, and whenever an operator
-# imports one by hand — and written, for `pxe:rules --export=toml`.
+# `kindling.toml`, the service settings: read with `toml`, and edited in
+# place (comments and order kept) by the settings screen with `toml_edit`. The
+# boot policy is never read from or written to TOML: it lives in the database.
 toml = "1.2"
+toml_edit = "0.25"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }

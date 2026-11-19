@@ -39,16 +39,12 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
 /// *production*, which several checks reasonably refuse to guess in.
 pub fn environment(mode: Mode) -> Env {
     match mode {
-        Mode::Running => Env::load_or_default(".env"),
+        // `main` has already read `kindling.toml` into the process
+        // environment, under whatever was really set there.
+        Mode::Running => Env::new(),
         Mode::Testing => {
             let mut env = Env::new();
             env.set("APP_ENV", "testing");
-
-            // Each test boots against its own in-memory database, which the
-            // starter policy is seeded into. Naming no import file keeps a
-            // policy file lying in the working directory from deciding what
-            // a test runs against.
-            env.set("PXE_RULES_PATH", "");
             env.isolated()
         }
     }

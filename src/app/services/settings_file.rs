@@ -1,10 +1,14 @@
-//! Editing `.env` without flattening it, and a catalogue of what may go in it.
+//! Editing `kindling.toml` without flattening it, and a catalogue of what may
+//! go in it.
 //!
-//! The same problem the policy file has: a settings form that reads the file
-//! into a map and writes the map back out loses the comments, the blank lines
-//! and the order somebody grouped things into. So values are replaced *in
-//! place* — the line changes, nothing else moves — and a key that was not
-//! there is appended rather than sorted in.
+//! A settings form that reads the file into a map and writes the map back out
+//! loses the comments, the blank lines and the order somebody grouped things
+//! into. So values are changed *in place* with `toml_edit` — the key changes,
+//! nothing else moves — and a key that was not there is added to its section.
+//!
+//! Only service settings live here (see `config::service_file`). The boot
+//! policy is in the database, and this editor refuses a policy table the same
+//! way the server does.
 //!
 //! The catalogue below is the other half. A configuration editor that shows
 //! `PXE_LOOP_THRESHOLD` as a text box and nothing else has moved the problem
@@ -15,6 +19,8 @@
 use serde::Serialize;
 
 use rainier_framework::config::{Config, Env};
+
+use crate::config::service_file::{self, ValueKind};
 
 /// What kind of value a setting takes, so an editor can render the right
 /// control and refuse the obviously wrong thing before the server has to.
@@ -168,16 +174,6 @@ pub const CATALOGUE: &[Spec] = &[
     ),
     // --- files -------------------------------------------------------------
     spec(
-        "PXE_RULES_PATH",
-        "Files",
-        "Legacy policy file",
-        Kind::Path,
-        "pxe-rules.toml",
-        "The boot policy lives in the database and is edited on the Policy screen. A TOML \
-         policy file from an earlier release found here is imported once, on the first start \
-         against an empty database, and never read again.",
-    ),
-    spec(
         "PXE_TFTP_ROOT",
         "Files",
         "Boot root",
@@ -320,34 +316,47 @@ pub fn spec_for(key: &str) -> Option<&'static Spec> {
 pub struct Setting {
     #[serde(flatten)]
     pub spec: &'static Spec,
-    /// What `.env` says, or `None` when the file does not mention it.
+    /// Where it is written in `kindling.toml`: `server.ip`.
+    pub path: &'static str,
+    /// What the file says, or `None` when the file does not mention it.
     pub value: Option<String>,
     /// Whether the value is withheld because it is a secret.
     pub redacted: bool,
 }
 
-/// Why a proposed `.env` was not accepted.
+/// Why a proposed file was not accepted.
 #[derive(Debug, Clone, Serialize)]
-pub struct EnvError {
+pub struct SettingsError {
     pub problems: Vec<String>,
 }
 
-impl std::fmt::Display for EnvError {
+impl std::fmt::Display for SettingsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.problems.join("; "))
     }
 }
 
-impl std::error::Error for EnvError {}
+impl std::error::Error for SettingsError {}
 
-/// `.env`, edited in place.
-pub struct EnvFile {
+fn problem(message: impl Into<String>) -> SettingsError {
+    SettingsError {
+        problems: vec![message.into()],
+    }
+}
+
+/// `kindling.toml`, edited in place.
+pub struct SettingsFile {
     path: std::path::PathBuf,
 }
 
-impl EnvFile {
+impl SettingsFile {
     pub fn at(path: impl Into<std::path::PathBuf>) -> Self {
         Self { path: path.into() }
+    }
+
+    /// The file this server was started with.
+    pub fn current() -> Self {
+        Self::at(service_file::path())
     }
 
     pub fn path(&self) -> &std::path::Path {
@@ -356,8 +365,8 @@ impl EnvFile {
 
     /// The file's text, or empty when there is no file yet.
     ///
-    /// Empty rather than an error: a fresh install has no `.env` and the
-    /// editor is how one gets written.
+    /// Empty rather than an error: every setting has a default, and the
+    /// editor is how a file gets written.
     pub fn read(&self) -> String {
         std::fs::read_to_string(&self.path).unwrap_or_default()
     }
@@ -368,152 +377,125 @@ impl EnvFile {
     /// an editor edits the file — showing the live value would quietly present
     /// a detected address as though somebody had typed it.
     pub fn settings(&self) -> Vec<Setting> {
-        let declared = parse(&self.read());
+        let declared = service_file::parse(&self.read()).unwrap_or_default();
 
         CATALOGUE
             .iter()
-            .map(|spec| {
+            .filter_map(|spec| {
+                let key = service_file::key_for_variable(spec.key)?;
                 let value = declared
                     .iter()
-                    .find(|(key, _)| key == spec.key)
+                    .find(|(variable, _)| *variable == spec.key)
                     .map(|(_, value)| value.clone());
-
                 let redacted = spec.kind == Kind::Secret && value.is_some();
-                Setting {
+                Some(Setting {
                     spec,
+                    path: key.path,
                     value: if redacted {
                         Some(mask(value.as_deref().unwrap_or_default()))
                     } else {
                         value
                     },
                     redacted,
-                }
+                })
             })
             .collect()
     }
 
     /// Check that a proposed file would boot, without writing it.
     ///
-    /// The same `configure` the server runs, so this answers the question that
-    /// matters — "would this start" — rather than a similar one that drifts.
-    pub fn validate(text: &str) -> Result<(), EnvError> {
-        let env = Env::parse(text).isolated();
+    /// The same parser and the same `configure` the server runs, so this
+    /// answers the question that matters — "would this start" — rather than a
+    /// similar one that drifts.
+    pub fn validate(text: &str) -> Result<(), SettingsError> {
+        let settings = service_file::parse(text).map_err(|e| SettingsError {
+            problems: e.problems,
+        })?;
+        let env = Env::from_map(settings.into_iter().map(|(k, v)| (k.to_string(), v)));
         let config = Config::new();
-
-        crate::config::configure(&config, &env).map_err(|e| EnvError {
-            problems: vec![e.message().to_string()],
-        })
+        crate::config::configure(&config, &env).map_err(|e| problem(e.message().to_string()))
     }
 
     /// Replace the whole file after validating it, keeping a copy of the old
     /// one beside it.
-    pub fn write(&self, text: &str) -> Result<(), EnvError> {
+    pub fn write(&self, text: &str) -> Result<(), SettingsError> {
         Self::validate(text)?;
         self.save(text)
     }
 
-    /// Change some values, leaving every comment, blank line and ordering
-    /// decision in the file exactly where it was.
-    ///
-    /// A value of `None` comments the line out rather than deleting it, which
-    /// is what somebody turning a setting off almost always means — and it
-    /// leaves the name visible for whoever comes looking for it.
-    pub fn apply(&self, changes: &[(String, Option<String>)]) -> Result<String, EnvError> {
-        let edited = rewrite(&self.read(), changes);
+    /// Change some settings, named as the server reads them (`PXE_SERVER_IP`),
+    /// leaving every comment and ordering decision in the file where it was.
+    /// A value of `None` removes the key, so the default applies again.
+    pub fn apply(&self, changes: &[(String, Option<String>)]) -> Result<String, SettingsError> {
+        let edited = rewrite(&self.read(), changes)?;
         Self::validate(&edited)?;
         self.save(&edited)?;
         Ok(edited)
     }
 
-    fn save(&self, text: &str) -> Result<(), EnvError> {
+    fn save(&self, text: &str) -> Result<(), SettingsError> {
         if self.path.exists() {
-            let backup = self.path.with_extension("bak");
-            std::fs::copy(&self.path, &backup).map_err(|e| EnvError {
-                problems: vec![format!("could not back up to `{}`: {e}", backup.display())],
+            let backup = self.path.with_extension("toml.bak");
+            std::fs::copy(&self.path, &backup).map_err(|e| {
+                problem(format!("could not back up to `{}`: {e}", backup.display()))
             })?;
         }
-
-        std::fs::write(&self.path, text).map_err(|e| EnvError {
-            problems: vec![format!("could not write `{}`: {e}", self.path.display())],
-        })
+        std::fs::write(&self.path, text)
+            .map_err(|e| problem(format!("could not write `{}`: {e}", self.path.display())))
     }
 }
 
-/// Apply changes to the text of a `.env`, preserving everything else.
-fn rewrite(original: &str, changes: &[(String, Option<String>)]) -> String {
-    let mut lines: Vec<String> = original.lines().map(str::to_string).collect();
-    let mut appended: Vec<String> = Vec::new();
+/// Apply changes to the text of a `kindling.toml`, preserving everything else.
+fn rewrite(original: &str, changes: &[(String, Option<String>)]) -> Result<String, SettingsError> {
+    let mut document: toml_edit::DocumentMut = original
+        .parse()
+        .map_err(|e| problem(format!("the file is not valid TOML: {e}")))?;
 
-    for (key, value) in changes {
-        let existing = lines.iter().position(|line| declares(line, key));
+    for (variable, value) in changes {
+        let key = service_file::key_for_variable(variable)
+            .ok_or_else(|| problem(format!("this server reads no setting called `{variable}`")))?;
+        let (section, name) = key.path.split_once('.').expect("paths have a section");
 
-        match (existing, value) {
-            (Some(index), Some(value)) => lines[index] = format!("{key}={}", quote(value)),
-            // Commented out rather than removed: the name stays where the
-            // person who set it will look for it.
-            (Some(index), None) => lines[index] = format!("#{key}="),
-            (None, Some(value)) => appended.push(format!("{key}={}", quote(value))),
-            (None, None) => {}
-        }
-    }
-
-    if !appended.is_empty() {
-        if !lines.last().is_some_and(|line| line.trim().is_empty()) {
-            lines.push(String::new());
-        }
-        lines.push("# Added by the configuration editor.".to_string());
-        lines.extend(appended);
-    }
-
-    let mut out = lines.join("\n");
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out
-}
-
-/// Whether a line sets this key. A commented-out line does not.
-fn declares(line: &str, key: &str) -> bool {
-    let trimmed = line.trim_start();
-    trimmed
-        .strip_prefix(key)
-        .is_some_and(|rest| rest.trim_start().starts_with('='))
-}
-
-/// Quote a value only when it needs it — an unquoted file is easier to read,
-/// and most values are a word.
-fn quote(value: &str) -> String {
-    let needs = value.is_empty()
-        || value.starts_with(' ')
-        || value.ends_with(' ')
-        || value.contains('#')
-        || value.contains('"');
-
-    if needs {
-        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
-    } else {
-        value.to_string()
-    }
-}
-
-/// The `KEY=value` pairs a file declares, ignoring comments.
-fn parse(text: &str) -> Vec<(String, String)> {
-    text.lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                return None;
+        match value {
+            None => {
+                if let Some(table) = document.get_mut(section).and_then(|t| t.as_table_mut()) {
+                    table.remove(name);
+                }
             }
-            let (key, value) = line.split_once('=')?;
-            let value = value.trim();
-            let value = value
-                .strip_prefix('"')
-                .and_then(|v| v.strip_suffix('"'))
-                .map(|v| v.replace("\\\"", "\"").replace("\\\\", "\\"))
-                .unwrap_or_else(|| value.to_string());
-            Some((key.trim().to_string(), value))
-        })
-        .collect()
+            Some(value) => {
+                let item = match key.kind {
+                    ValueKind::Integer => {
+                        toml_edit::value(value.trim().parse::<i64>().map_err(|_| {
+                            problem(format!(
+                                "`{}` must be a whole number, not `{value}`",
+                                key.path
+                            ))
+                        })?)
+                    }
+                    ValueKind::Boolean => toml_edit::value(match value.trim() {
+                        "true" | "1" | "yes" | "on" => true,
+                        "false" | "0" | "no" | "off" => false,
+                        other => {
+                            return Err(problem(format!(
+                                "`{}` must be true or false, not `{other}`",
+                                key.path
+                            )))
+                        }
+                    }),
+                    ValueKind::Text => toml_edit::value(value.as_str()),
+                };
+                if document.get(section).is_none() {
+                    document.insert(section, toml_edit::Item::Table(toml_edit::Table::new()));
+                }
+                let table = document[section]
+                    .as_table_mut()
+                    .ok_or_else(|| problem(format!("`{section}` in the file is not a section")))?;
+                table.insert(name, item);
+            }
+        }
+    }
+
+    Ok(document.to_string())
 }
 
 /// Enough of a secret to recognise it, not enough to use it.
@@ -530,88 +512,57 @@ mod tests {
     use super::*;
 
     const ORIGINAL: &str = "# kindling\n\
+                            [server]\n\
                             # The address machines come back to.\n\
-                            PXE_SERVER_IP=10.0.0.2\n\
+                            ip = \"10.0.0.2\"\n\
                             \n\
-                            # Listeners\n\
-                            SERVER_PORT=8080\n\
-                            #PXE_OUI_FILE=oui.txt\n";
+                            [http]\n\
+                            port = 8080 # the admin UI too\n";
 
     #[test]
     fn changing_a_value_leaves_every_comment_where_it_was() {
-        // The reason this is not a map round-trip.
-        let edited = rewrite(ORIGINAL, &[("SERVER_PORT".into(), Some("80".into()))]);
-
-        assert!(edited.contains("# kindling"));
-        assert!(edited.contains("# The address machines come back to."));
-        assert!(edited.contains("# Listeners"));
-        assert!(edited.contains("SERVER_PORT=80"));
-        assert!(!edited.contains("SERVER_PORT=8080"));
-        assert!(
-            edited.contains("PXE_SERVER_IP=10.0.0.2"),
-            "untouched settings stay untouched"
-        );
-    }
-
-    #[test]
-    fn a_commented_out_line_is_not_a_declaration() {
-        // `#PXE_OUI_FILE=` is a suggestion, not a setting, so setting it adds
-        // a line rather than silently reviving the commented one in place.
-        assert!(!declares("#PXE_OUI_FILE=oui.txt", "PXE_OUI_FILE"));
-        assert!(declares("PXE_OUI_FILE=oui.txt", "PXE_OUI_FILE"));
-        assert!(declares("  PXE_OUI_FILE = oui.txt", "PXE_OUI_FILE"));
-
-        // And a longer name that merely starts the same is a different key.
-        assert!(!declares("PXE_TFTP_PORT=69", "PXE_TFTP"));
-    }
-
-    #[test]
-    fn a_new_setting_is_appended_under_a_heading_that_says_where_it_came_from() {
-        let edited = rewrite(ORIGINAL, &[("PXE_API_TOKEN".into(), Some("s3cret".into()))]);
-
-        assert!(edited.contains("# Added by the configuration editor."));
-        assert!(edited.trim_end().ends_with("PXE_API_TOKEN=s3cret"));
-        assert!(edited.contains("SERVER_PORT=8080"), "nothing else moved");
-    }
-
-    #[test]
-    fn turning_a_setting_off_comments_it_rather_than_deleting_it() {
-        // The name stays where whoever set it will go looking for it.
-        let edited = rewrite(ORIGINAL, &[("PXE_SERVER_IP".into(), None)]);
-
-        assert!(edited.contains("#PXE_SERVER_IP="));
-        assert!(!edited.contains("PXE_SERVER_IP=10.0.0.2"));
+        let edited = rewrite(ORIGINAL, &[("SERVER_PORT".into(), Some("80".into()))]).unwrap();
+        assert!(edited.contains("# kindling"), "{edited}");
         assert!(
             edited.contains("# The address machines come back to."),
-            "its comment survives"
+            "{edited}"
+        );
+        assert!(edited.contains("port = 80"), "{edited}");
+        assert!(edited.contains("ip = \"10.0.0.2\""), "{edited}");
+    }
+
+    #[test]
+    fn a_new_setting_goes_into_its_section() {
+        let edited = rewrite(
+            ORIGINAL,
+            &[("PXE_DHCP_ENABLED".into(), Some("false".into()))],
+        )
+        .unwrap();
+        let settings = service_file::parse(&edited).unwrap();
+        assert!(
+            settings.contains(&("PXE_DHCP_ENABLED", "false".into())),
+            "{edited}"
         );
     }
 
     #[test]
-    fn a_value_is_quoted_only_when_it_needs_to_be() {
-        assert_eq!(quote("10.0.0.2"), "10.0.0.2");
-        assert_eq!(quote("info,sqlx=warn"), "info,sqlx=warn");
-        assert_eq!(quote(""), "\"\"");
-        assert_eq!(quote("a # b"), "\"a # b\"");
-        assert_eq!(quote(" padded "), "\" padded \"");
-        assert_eq!(quote("say \"hi\""), "\"say \\\"hi\\\"\"");
+    fn removing_a_setting_puts_the_default_back() {
+        let edited = rewrite(ORIGINAL, &[("SERVER_PORT".into(), None)]).unwrap();
+        assert!(!edited.contains("port ="), "{edited}");
+    }
+
+    #[test]
+    fn a_setting_nobody_reads_is_refused() {
+        assert!(rewrite(ORIGINAL, &[("PXE_RULES_PATH".into(), Some("x".into()))]).is_err());
     }
 
     #[test]
     fn a_proposed_file_is_checked_against_the_loader_that_would_run_it() {
-        // Not a similar check that drifts: the same `configure`.
-        assert!(EnvFile::validate("APP_ENV=local\nSERVER_PORT=8080\n").is_ok());
+        let error = SettingsFile::validate("[server]\nip = \"boot.example.com\"\n").unwrap_err();
+        assert!(error.problems[0].contains("four bytes"), "{error}");
 
-        let error = EnvFile::validate("APP_ENV=local\nPXE_SERVER_IP=not-an-address\n").unwrap_err();
-        assert!(error.to_string().contains("PXE_SERVER_IP"), "{error}");
-
-        // Unset `APP_ENV` means production, where guessing the address is
-        // refused — so the editor catches it before the restart does.
-        let error = EnvFile::validate("SERVER_PORT=8080\n").unwrap_err();
-        assert!(
-            error.to_string().contains("PXE_SERVER_IP is not set"),
-            "{error}"
-        );
+        let error = SettingsFile::validate("[profiles.local]\nkind = \"local\"\n").unwrap_err();
+        assert!(error.problems[0].contains("database"), "{error}");
     }
 
     #[test]
@@ -623,6 +574,11 @@ mod tests {
         assert_eq!(keys.len(), before, "a setting is listed twice");
 
         for spec in CATALOGUE {
+            assert!(
+                service_file::key_for_variable(spec.key).is_some(),
+                "`{}` has nowhere to go in kindling.toml",
+                spec.key
+            );
             assert!(
                 spec.help.len() > 40,
                 "`{}` needs a real explanation",
@@ -651,19 +607,21 @@ mod tests {
 
     #[test]
     fn the_editor_reads_values_out_of_the_file_and_hides_the_secrets() {
-        let path = std::env::temp_dir().join(format!("kindling-env-{}.env", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("kindling-settings-{}.toml", std::process::id()));
         std::fs::write(
             &path,
-            "PXE_SERVER_IP=10.0.0.2\nPXE_API_TOKEN=supersecretvalue\n",
+            "[server]\nip = \"10.0.0.2\"\n[api]\ntoken = \"supersecretvalue\"\n",
         )
         .unwrap();
 
-        let settings = EnvFile::at(&path).settings();
+        let settings = SettingsFile::at(&path).settings();
         let address = settings
             .iter()
             .find(|s| s.spec.key == "PXE_SERVER_IP")
             .unwrap();
         assert_eq!(address.value.as_deref(), Some("10.0.0.2"));
+        assert_eq!(address.path, "server.ip");
         assert!(!address.redacted);
 
         let token = settings
@@ -682,9 +640,8 @@ mod tests {
 
     #[test]
     fn a_missing_file_reads_as_empty_rather_than_failing() {
-        // A fresh install has no `.env`, and the editor is how one gets one.
-        let env = EnvFile::at(std::env::temp_dir().join("kindling-env-not-here.env"));
-        assert_eq!(env.read(), "");
-        assert!(env.settings().iter().all(|s| s.value.is_none()));
+        let file = SettingsFile::at(std::env::temp_dir().join("kindling-settings-not-here.toml"));
+        assert_eq!(file.read(), "");
+        assert!(file.settings().iter().all(|s| s.value.is_none()));
     }
 }

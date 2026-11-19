@@ -21,7 +21,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, NaiveTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
@@ -163,8 +162,8 @@ impl fmt::Display for TimeWindow {
 /// The flat condition form of earlier releases: one key per fact, a list is
 /// "any of these", and the keys present are ANDed.
 ///
-/// Only ever read — on the way in, from a policy file written for an older
-/// release — and turned straight into a [`Condition`] tree by
+/// Still accepted wherever a condition is (`pxe:rule --when=FACT=VALUE` builds
+/// one), and turned straight into a [`Condition`] tree by
 /// [`Match::into_condition`]. `deny_unknown_fields`, because `vendorr =
 /// ["Dell"]` otherwise means "match everything": a rule that quietly reimages
 /// the fleet.
@@ -293,11 +292,12 @@ pub struct Settings {
     pub timezone_offset_minutes: i64,
 }
 
-/// A whole policy, as stored, exported and imported.
+/// A whole policy, as the database stores it and the API speaks it.
 ///
-/// JSON is its native form — it is what the database holds and the API
-/// speaks. TOML is read for importing a policy file from an earlier release,
-/// which is why `[[rule]]` is still accepted beside `rules`.
+/// There is deliberately no text-file form. The policy is edited where it is
+/// validated and versioned — the web UI, the API, the `pxe:rule`,
+/// `pxe:profile` and `pxe:policy` commands — and never read from a file, so
+/// there is no second copy to drift from the first.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PolicyDocument {
@@ -312,32 +312,49 @@ pub struct PolicyDocument {
     pub rules: Vec<Rule>,
 }
 
-/// The name an earlier release gave the same thing.
-pub type RuleFile = PolicyDocument;
-
 impl PolicyDocument {
-    pub fn from_toml(text: &str) -> Result<Self, LoadError> {
-        toml::from_str(text)
-            .map_err(|e| LoadError::one(format!("the policy will not parse as TOML: {e}")))
-    }
-
-    pub fn from_json(text: &str) -> Result<Self, LoadError> {
-        serde_json::from_str(text)
-            .map_err(|e| LoadError::one(format!("the policy will not parse as JSON: {e}")))
-    }
-
-    /// JSON if it looks like JSON, TOML otherwise — for an import box that
-    /// takes either.
-    pub fn from_text(text: &str) -> Result<Self, LoadError> {
-        if text.trim_start().starts_with('{') {
-            Self::from_json(text)
-        } else {
-            Self::from_toml(text)
+    /// What a new database starts with: answer nobody.
+    ///
+    /// The default profile is `hands-off`, which offers no boot file at all,
+    /// so a fresh install on a busy network changes nothing until somebody
+    /// writes a rule. The boot loaders and the two profiles every policy
+    /// needs are there; there are no rules. (An earlier starter imaged every
+    /// unknown physical machine, which is not a thing to do by default.)
+    pub fn starter() -> Self {
+        let profile = |label: &str, kind: ProfileKind| Profile {
+            label: Some(label.to_string()),
+            kind: Some(kind),
+            ..Profile::default()
+        };
+        Self {
+            settings: Settings {
+                default_profile: Some("hands-off".to_string()),
+                timezone_offset_minutes: 0,
+            },
+            bootloaders: [
+                ("bios", "undionly.kpxe"),
+                ("x86-uefi", "ipxe32.efi"),
+                ("x64-uefi", "ipxe.efi"),
+                ("arm64-uefi", "ipxe-arm64.efi"),
+                ("default", "ipxe.efi"),
+            ]
+            .into_iter()
+            .map(|(arch, file)| (arch.to_string(), file.to_string()))
+            .collect(),
+            profiles: [
+                (
+                    "hands-off".to_string(),
+                    profile("Leave this machine alone", ProfileKind::Ignore),
+                ),
+                (
+                    "local".to_string(),
+                    profile("Boot from the local disk", ProfileKind::Local),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            rules: Vec::new(),
         }
-    }
-
-    pub fn to_toml(&self) -> Result<String, String> {
-        toml::to_string_pretty(self).map_err(|e| e.to_string())
     }
 
     pub fn rule(&self, name: &str) -> Option<&Rule> {
@@ -385,10 +402,7 @@ impl std::error::Error for LoadError {}
 pub enum Origin {
     /// The database — the normal case.
     Database,
-    /// A file, being imported or checked. `script_file` in a profile is read
-    /// relative to its directory.
-    File(PathBuf),
-    /// Built in memory: a test, or a document posted to the API.
+    /// Built in memory: a test, or a document posted to the API to check.
     Inline,
 }
 
@@ -396,7 +410,6 @@ impl fmt::Display for Origin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Origin::Database => f.write_str("database"),
-            Origin::File(path) => write!(f, "{}", path.display()),
             Origin::Inline => f.write_str("inline"),
         }
     }
@@ -438,32 +451,15 @@ fn is_plain_name(name: &str) -> bool {
 }
 
 impl RuleSet {
-    /// A TOML policy, as an earlier release wrote it.
-    pub fn parse(toml_text: &str) -> Result<Self, LoadError> {
-        Self::from_document(PolicyDocument::from_toml(toml_text)?, Origin::Inline)
-    }
-
-    /// A policy file, TOML or JSON by its extension.
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, LoadError> {
-        let path = path.as_ref();
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| LoadError::one(format!("could not read `{}`: {e}", path.display())))?;
-        let document = if path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
-        {
-            PolicyDocument::from_json(&text)
-        } else {
-            PolicyDocument::from_toml(&text)
-        }
-        .map_err(|e| LoadError {
-            problems: e
-                .problems
-                .into_iter()
-                .map(|p| format!("`{}`: {p}", path.display()))
-                .collect(),
-        })?;
-        Self::from_document(document, Origin::File(path.to_path_buf()))
+    /// A policy written as a JSON value in code — what the tests use.
+    ///
+    /// Not a way in for policy text: there is no file or string form, and
+    /// the value is checked exactly as the database's is.
+    #[doc(hidden)]
+    pub fn from_json_value(value: serde_json::Value) -> Result<Self, LoadError> {
+        let document: PolicyDocument = serde_json::from_value(value)
+            .map_err(|e| LoadError::one(format!("not a policy document: {e}")))?;
+        Self::from_document(document, Origin::Inline)
     }
 
     /// Validate a document and put its rules in evaluation order.
@@ -474,33 +470,16 @@ impl RuleSet {
     pub fn from_document(mut document: PolicyDocument, origin: Origin) -> Result<Self, LoadError> {
         let mut problems = Vec::new();
 
-        // `script_file` is a convenience of a policy kept as files: a long
-        // script in its own file next door. Read it in on import, so what the
-        // database holds is the whole policy and not a pointer to a file on
-        // one machine's disk.
+        // `script_file` pointed a profile at a script on one machine's disk,
+        // read when a policy file was imported. There are no policy files, so
+        // the script goes in the profile, where the database holds it.
         for (name, profile) in document.profiles.iter_mut() {
-            let Some(relative) = profile.script_file.clone() else {
-                continue;
-            };
-            match &origin {
-                Origin::File(path) => {
-                    let path = path.parent().unwrap_or(Path::new(".")).join(&relative);
-                    match std::fs::read_to_string(&path) {
-                        Ok(script) => {
-                            profile.script = Some(script);
-                            profile.script_file = None;
-                        }
-                        Err(e) => problems.push(format!(
-                            "profile `{name}` names `script_file = \"{relative}\"`, which could \
-                             not be read from `{}`: {e}",
-                            path.display()
-                        )),
-                    }
-                }
-                _ => problems.push(format!(
-                    "profile `{name}` names a `script_file`, which is only read when importing a \
-                     policy file. Paste the script into `script` instead."
-                )),
+            if profile.script_file.is_some() {
+                problems.push(format!(
+                    "profile `{name}` names a `script_file`; the policy does not read files. Put \
+                     the script in the profile's `script` (`pxe:profile set {name} \
+                     --script=…`)."
+                ));
             }
         }
 
@@ -931,51 +910,86 @@ mod tests {
     use crate::pxe::arch::ClientArch;
     use crate::pxe::oui::OuiDatabase;
 
-    const SAMPLE: &str = r#"
-[settings]
-default_profile = "menu"
-
-[bootloaders]
-bios = "ipxe/undionly.kpxe"
-x64-uefi = "ipxe/ipxe.efi"
-default = "ipxe/ipxe.efi"
-
-[profiles.local]
-label = "Boot from disk"
-kind = "local"
-
-[profiles.menu]
-kind = "menu"
-entries = [{ profile = "local" }, { profile = "ubuntu" }]
-
-[profiles.ubuntu]
-label = "Ubuntu 24.04"
-kernel = "{{base}}/ubuntu/vmlinuz"
-
-[profiles.winpe]
-label = "WinPE"
-kernel = "{{base}}/wimboot"
-
-[[rule]]
-name = "virtual-machines-never-get-windows"
-priority = 100
-when = { device_class = ["virtual"] }
-profile = "ubuntu"
-
-[[rule]]
-name = "tag-the-lab"
-when = { subnet = ["10.20.0.0/16"] }
-tag = ["lab"]
-
-[[rule]]
-name = "dell-workstations"
-when = { vendor = ["Dell"], arch = ["x64-uefi"] }
-unless = { tag = ["keep"] }
-profile = "winpe"
-"#;
+    fn sample_policy() -> serde_json::Value {
+        serde_json::json!({
+            "settings": {
+                "default_profile": "menu"
+            },
+            "bootloaders": {
+                "bios": "ipxe/undionly.kpxe",
+                "x64-uefi": "ipxe/ipxe.efi",
+                "default": "ipxe/ipxe.efi"
+            },
+            "profiles": {
+                "local": {
+                    "label": "Boot from disk",
+                    "kind": "local"
+                },
+                "menu": {
+                    "kind": "menu",
+                    "entries": [
+                        {
+                            "profile": "local"
+                        },
+                        {
+                            "profile": "ubuntu"
+                        }
+                    ]
+                },
+                "ubuntu": {
+                    "label": "Ubuntu 24.04",
+                    "kernel": "{{base}}/ubuntu/vmlinuz"
+                },
+                "winpe": {
+                    "label": "WinPE",
+                    "kernel": "{{base}}/wimboot"
+                }
+            },
+            "rule": [
+                {
+                    "name": "virtual-machines-never-get-windows",
+                    "priority": 100,
+                    "when": {
+                        "device_class": [
+                            "virtual"
+                        ]
+                    },
+                    "profile": "ubuntu"
+                },
+                {
+                    "name": "tag-the-lab",
+                    "when": {
+                        "subnet": [
+                            "10.20.0.0/16"
+                        ]
+                    },
+                    "tag": [
+                        "lab"
+                    ]
+                },
+                {
+                    "name": "dell-workstations",
+                    "when": {
+                        "vendor": [
+                            "Dell"
+                        ],
+                        "arch": [
+                            "x64-uefi"
+                        ]
+                    },
+                    "unless": {
+                        "tag": [
+                            "keep"
+                        ]
+                    },
+                    "profile": "winpe"
+                }
+            ]
+        })
+    }
 
     fn rules() -> RuleSet {
-        RuleSet::parse(SAMPLE).expect("the sample file is valid")
+        RuleSet::from_json_value(sample_policy()).expect("the sample file is valid")
     }
 
     fn facts(mac: &str, arch: ClientArch) -> ClientFacts {
@@ -1106,17 +1120,24 @@ profile = "winpe"
 
     #[test]
     fn a_rule_naming_a_profile_that_does_not_exist_is_refused_at_load() {
-        let error = RuleSet::parse(
-            r#"
-[profiles.real]
-kind = "local"
-
-[[rule]]
-name = "typo"
-when = { arch = ["bios"] }
-profile = "realy"
-"#,
-        )
+        let error = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "real": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "typo",
+                    "when": {
+                        "arch": [
+                            "bios"
+                        ]
+                    },
+                    "profile": "realy"
+                }
+            ]
+        }))
         .unwrap_err();
         assert!(error.to_string().contains("`realy`"), "{error}");
         assert!(
@@ -1127,23 +1148,31 @@ profile = "realy"
 
     #[test]
     fn every_problem_is_reported_at_once() {
-        let error = RuleSet::parse(
-            r#"
-[profiles.empty]
-
-[[rule]]
-name = "a"
-profile = "nope"
-
-[[rule]]
-name = "a"
-tag = ["x"]
-
-[[rule]]
-name = "does-nothing"
-when = { arch = ["bios"] }
-"#,
-        )
+        let error = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "empty": {}
+            },
+            "rule": [
+                {
+                    "name": "a",
+                    "profile": "nope"
+                },
+                {
+                    "name": "a",
+                    "tag": [
+                        "x"
+                    ]
+                },
+                {
+                    "name": "does-nothing",
+                    "when": {
+                        "arch": [
+                            "bios"
+                        ]
+                    }
+                }
+            ]
+        }))
         .unwrap_err();
 
         assert!(error.problems.len() >= 4, "{:#?}", error.problems);
@@ -1155,23 +1184,27 @@ when = { arch = ["bios"] }
 
     #[test]
     fn a_disabled_rule_is_skipped_and_says_so() {
-        let rules = RuleSet::parse(
-            r#"
-[profiles.a]
-kind = "local"
-[profiles.b]
-kind = "local"
-
-[[rule]]
-name = "off"
-enabled = false
-profile = "a"
-
-[[rule]]
-name = "on"
-profile = "b"
-"#,
-        )
+        let rules = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "a": {
+                    "kind": "local"
+                },
+                "b": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "off",
+                    "enabled": false,
+                    "profile": "a"
+                },
+                {
+                    "name": "on",
+                    "profile": "b"
+                }
+            ]
+        }))
         .unwrap();
 
         let decision = rules.evaluate(&facts("aa:bb:cc:dd:ee:ff", ClientArch::BIOS));
@@ -1184,40 +1217,53 @@ profile = "b"
 
     #[test]
     fn an_unknown_key_in_a_legacy_match_is_a_typo_and_is_refused() {
-        let error = RuleSet::parse(
-            r#"
-[profiles.a]
-kind = "local"
-
-[[rule]]
-name = "typo"
-profile = "a"
-when = { vendorr = ["Dell"] }
-"#,
-        )
+        let error = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "a": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "typo",
+                    "profile": "a",
+                    "when": {
+                        "vendorr": [
+                            "Dell"
+                        ]
+                    }
+                }
+            ]
+        }))
         .unwrap_err();
         assert!(error.to_string().contains("vendorr"), "{error}");
     }
 
     #[test]
     fn known_distinguishes_a_new_machine_from_a_returning_one() {
-        let rules = RuleSet::parse(
-            r#"
-[profiles.install]
-kernel = "x"
-[profiles.local]
-kind = "local"
-
-[[rule]]
-name = "image-new-machines"
-when = { known = false }
-profile = "install"
-
-[[rule]]
-name = "everything-else-boots-itself"
-profile = "local"
-"#,
-        )
+        let rules = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "install": {
+                    "kernel": "x"
+                },
+                "local": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "image-new-machines",
+                    "when": {
+                        "known": false
+                    },
+                    "profile": "install"
+                },
+                {
+                    "name": "everything-else-boots-itself",
+                    "profile": "local"
+                }
+            ]
+        }))
         .unwrap();
 
         let mut new = facts("aa:bb:cc:dd:ee:ff", ClientArch::BIOS);
@@ -1232,23 +1278,32 @@ profile = "local"
     #[test]
     fn a_reimage_window_can_be_restricted_to_the_small_hours() {
         use chrono::TimeZone;
-        let rules = RuleSet::parse(
-            r#"
-[profiles.reimage]
-kernel = "x"
-[profiles.local]
-kind = "local"
-
-[[rule]]
-name = "overnight-only"
-when = { time_between = ["22:00", "06:00"] }
-profile = "reimage"
-
-[[rule]]
-name = "daytime"
-profile = "local"
-"#,
-        )
+        let rules = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "reimage": {
+                    "kernel": "x"
+                },
+                "local": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "overnight-only",
+                    "when": {
+                        "time_between": [
+                            "22:00",
+                            "06:00"
+                        ]
+                    },
+                    "profile": "reimage"
+                },
+                {
+                    "name": "daytime",
+                    "profile": "local"
+                }
+            ]
+        }))
         .unwrap();
 
         let at = |hour: u32| {
@@ -1276,17 +1331,25 @@ profile = "local"
 
     #[test]
     fn an_oui_can_be_written_however_the_operator_writes_ouis() {
-        let rules = RuleSet::parse(
-            r#"
-[profiles.a]
-kind = "local"
-
-[[rule]]
-name = "dell"
-profile = "a"
-when = { oui = ["18-66-DA", "b083fe"] }
-"#,
-        )
+        let rules = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "a": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "dell",
+                    "profile": "a",
+                    "when": {
+                        "oui": [
+                            "18-66-DA",
+                            "b083fe"
+                        ]
+                    }
+                }
+            ]
+        }))
         .unwrap();
 
         assert!(!rules
@@ -1305,23 +1368,27 @@ when = { oui = ["18-66-DA", "b083fe"] }
 
     #[test]
     fn a_later_rule_cannot_take_the_profile_an_earlier_one_chose() {
-        let rules = RuleSet::parse(
-            r#"
-[profiles.first]
-kind = "local"
-[profiles.second]
-kind = "local"
-
-[[rule]]
-name = "chooses"
-profile = "first"
-stop = false
-
-[[rule]]
-name = "also-chooses"
-profile = "second"
-"#,
-        )
+        let rules = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "first": {
+                    "kind": "local"
+                },
+                "second": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "chooses",
+                    "profile": "first",
+                    "stop": false
+                },
+                {
+                    "name": "also-chooses",
+                    "profile": "second"
+                }
+            ]
+        }))
         .unwrap();
 
         let decision = rules.evaluate(&facts("aa:bb:cc:dd:ee:ff", ClientArch::BIOS));
@@ -1391,22 +1458,28 @@ profile = "second"
     }
 
     #[test]
-    fn a_document_round_trips_through_json_and_the_legacy_toml_imports() {
+    fn a_document_round_trips_through_the_json_the_database_stores() {
         let original = rules().to_document();
-        let json = serde_json::to_string(&original).unwrap();
-        let back = PolicyDocument::from_json(&json).unwrap();
+        let json = serde_json::to_value(&original).unwrap();
+        let back: PolicyDocument = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(back, original);
         assert!(
-            json.contains("\"rules\""),
-            "the JSON form says `rules`: {json}"
+            json.get("rules").is_some(),
+            "the stored form says `rules`: {json}"
         );
+    }
 
-        // And the TOML export reads back to the same thing.
-        let toml = original.to_toml().unwrap();
+    #[test]
+    fn the_starter_answers_nobody_and_loads() {
+        let rules = RuleSet::from_document(PolicyDocument::starter(), Origin::Database)
+            .expect("the starter must load");
+        assert!(
+            rules.rules().is_empty(),
+            "no rule touches a machine by default"
+        );
         assert_eq!(
-            PolicyDocument::from_toml(&toml).unwrap(),
-            original,
-            "{toml}"
+            rules.settings().default_profile.as_deref(),
+            Some("hands-off")
         );
     }
 
@@ -1433,6 +1506,6 @@ profile = "second"
             Origin::Database,
         )
         .unwrap_err();
-        assert!(error.to_string().contains("Paste the script"), "{error}");
+        assert!(error.to_string().contains("does not read files"), "{error}");
     }
 }

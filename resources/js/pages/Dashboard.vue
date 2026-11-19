@@ -72,7 +72,7 @@ onMounted(load);
       class="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm"
     >
       <div class="font-semibold text-rose-200">
-        The policy file on disk does not load, so what is running is older than the file.
+        The newest policy revision in the database does not load, so what is running is older than it.
       </div>
       <pre class="mt-2 whitespace-pre-wrap font-mono text-xs text-rose-200/80">{{
         health.rules.last_reload_error.error

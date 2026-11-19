@@ -9,6 +9,7 @@ pub mod database;
 pub mod keys;
 pub mod pxe;
 pub mod server;
+pub mod service_file;
 
 pub fn configure(config: &Config, env: &Env) -> Result<()> {
     app::configure(config, env)?;
@@ -35,7 +36,6 @@ mod tests {
             keys::SERVER_PORT.path(),
             keys::PXE_SERVER_IP.path(),
             keys::PXE_TFTP_ROOT.path(),
-            keys::PXE_RULES_PATH.path(),
         ] {
             assert!(
                 config.has(key),

@@ -1,4 +1,5 @@
 pub mod arch;
+pub mod autoexec;
 pub mod condition;
 pub mod dhcp;
 pub mod facts;

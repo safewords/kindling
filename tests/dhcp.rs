@@ -19,25 +19,36 @@ use pxe::pxe::policy::{self, FirmwareAnswer, Overrides, ServerSettings};
 use pxe::pxe::rules::RuleSet;
 use tokio::net::UdpSocket;
 
-const RULES: &str = r#"
-[settings]
-default_profile = "local"
-
-[bootloaders]
-bios = "undionly.kpxe"
-x64-uefi = "ipxe.efi"
-
-[profiles.local]
-kind = "local"
-
-[profiles.hands-off]
-kind = "ignore"
-
-[[rule]]
-name = "leave-the-switches-alone"
-when = { device_class = ["network"] }
-profile = "hands-off"
-"#;
+fn rules_policy() -> serde_json::Value {
+    serde_json::json!({
+        "settings": {
+            "default_profile": "local"
+        },
+        "bootloaders": {
+            "bios": "undionly.kpxe",
+            "x64-uefi": "ipxe.efi"
+        },
+        "profiles": {
+            "local": {
+                "kind": "local"
+            },
+            "hands-off": {
+                "kind": "ignore"
+            }
+        },
+        "rule": [
+            {
+                "name": "leave-the-switches-alone",
+                "when": {
+                    "device_class": [
+                        "network"
+                    ]
+                },
+                "profile": "hands-off"
+            }
+        ]
+    })
+}
 
 /// The real policy path, against a rule set this test owns.
 struct Policy {
@@ -64,7 +75,7 @@ fn settings() -> ServerSettings {
 /// Start a proxy on ephemeral ports and hand back the one to talk to.
 async fn start() -> SocketAddr {
     let policy = Policy {
-        rules: RuleSet::parse(RULES).expect("valid rules"),
+        rules: RuleSet::from_json_value(rules_policy()).expect("valid rules"),
         settings: settings(),
     };
 

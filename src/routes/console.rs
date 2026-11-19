@@ -4,14 +4,18 @@ use rainier_framework::console_kernel::Console;
 use rainier_framework::scheduler::Schedule;
 
 use crate::app::console::commands::{
-    DoctorCommand, HostsCommand, IpxeCommand, LogCommand, PinCommand, RulesCommand, ServeCommand,
-    TagCommand, TestCommand,
+    BackupCommand, DoctorCommand, HostsCommand, IpxeCommand, LogCommand, PinCommand, PolicyCommand,
+    ProfileCommand, RuleCommand, RulesCommand, ServeCommand, TagCommand, TestCommand,
 };
 
 pub fn commands() -> Console {
     rainier_framework::console("pxe")
         .register(ServeCommand)
         .register(RulesCommand)
+        .register(RuleCommand)
+        .register(ProfileCommand)
+        .register(PolicyCommand)
+        .register(BackupCommand)
         .register(TestCommand)
         .register(DoctorCommand)
         .register(HostsCommand)
@@ -63,6 +67,10 @@ mod tests {
             "migrate",
             "pxe:serve",
             "pxe:rules",
+            "pxe:rule",
+            "pxe:profile",
+            "pxe:policy",
+            "pxe:db:backup",
             "pxe:test",
             "pxe:doctor",
             "pxe:hosts",

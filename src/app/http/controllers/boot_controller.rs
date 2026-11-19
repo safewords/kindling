@@ -122,7 +122,7 @@ pub fn reflector(base: &str) -> String {
         "#!ipxe\n\
          # Asking again, with everything this machine knows about itself.\n\
          chain {base}/boot.ipxe?\
-mac=${{net0/mac:hexhyp}}\
+mac=${{netX/mac:hexhyp}}\
 &uuid=${{uuid}}\
 &arch=${{buildarch}}\
 &platform=${{platform}}\
@@ -244,7 +244,7 @@ mod tests {
         let script = reflector("http://10.0.0.2:8080/");
         assert!(script.starts_with("#!ipxe\n"));
         assert!(
-            script.contains("chain http://10.0.0.2:8080/boot.ipxe?mac=${net0/mac:hexhyp}"),
+            script.contains("chain http://10.0.0.2:8080/boot.ipxe?mac=${netX/mac:hexhyp}"),
             "{script}"
         );
         assert!(script.contains("product=${product:uristring}"), "{script}");

@@ -114,15 +114,11 @@ impl ServiceProvider for PxeServiceProvider {
             tracing::info!(count = applied.len(), "applied migrations");
         }
 
-        // The policy. On an empty database a policy file from an earlier
-        // release is imported once — so an upgrade keeps its policy — and
-        // otherwise the starter is seeded.
+        // The policy, from the database and nowhere else. An empty database
+        // gets the starter, which answers nobody.
         let settings = app.resolve::<Config>()?;
-        let import = crate::app::services::rule_store::legacy_policy_path(
-            &settings.get_or(PXE_RULES_PATH, String::new()),
-        );
         let store = app.resolve::<RuleStore>()?;
-        store.load(import.as_deref()).await.map_err(|e| {
+        store.load().await.map_err(|e| {
             Error::internal(format!(
                 "the boot policy will not load, so this server would tell machines to boot \
                  nothing:\n{e}"

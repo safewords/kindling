@@ -50,8 +50,8 @@ impl PolicyRepository {
         }
     }
 
-    /// Whether the database has never held a policy — the moment to import
-    /// one from a file, or seed the starter.
+    /// Whether the database has never held a policy — the moment to seed the
+    /// starter.
     ///
     /// A policy that was deliberately emptied still has its history, so it is
     /// not mistaken for a new install and silently re-seeded.

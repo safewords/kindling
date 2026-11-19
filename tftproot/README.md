@@ -30,8 +30,11 @@ Or build this project's own, which cannot chainload itself in a loop:
 `pxe:ipxe --install` copies the builds over the names above, keeping what it
 replaced in `ipxe-backup/`. See `ipxe/README.md`.
 
-The names above are the defaults; `[bootloaders]` in `pxe-rules.toml`
-overrides them per architecture.
+The names above are the defaults; `pxe:policy bootloader ARCH FILE` (or the
+Policy screen's Boot loaders tab) changes them per architecture.
+
+`autoexec.ipxe` does not belong here: the server generates it, chaining stock
+iPXE to its own `/boot.ipxe`, and a file of that name is never served.
 
 Nothing here is in version control, because these are large binaries that
 belong to other projects.

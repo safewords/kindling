@@ -75,7 +75,7 @@ pub enum LiveUpdate {
         error: Option<String>,
     },
 
-    /// `.env` was written. Names only — see the module note.
+    /// `kindling.toml` was written. Names only — see the module note.
     #[serde(rename = "config")]
     Config { changed: Vec<String> },
 

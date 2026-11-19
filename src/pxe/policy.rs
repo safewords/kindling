@@ -391,45 +391,66 @@ mod tests {
     use crate::pxe::arch::ClientArch;
     use crate::pxe::oui::OuiDatabase;
 
-    const RULES: &str = r#"
-[settings]
-default_profile = "menu"
-
-[bootloaders]
-bios = "ipxe/undionly.kpxe"
-x64-uefi = "ipxe/ipxe.efi"
-
-[profiles.menu]
-kind = "menu"
-entries = [{ profile = "local" }]
-
-[profiles.local]
-kind = "local"
-
-[profiles.install]
-label = "Ubuntu 24.04"
-kernel = "{{base}}/ubuntu/vmlinuz"
-
-[profiles.hands-off]
-kind = "ignore"
-
-[profiles.pxelinux]
-kind = "local"
-bootfile = { default = "pxelinux.0" }
-
-[[rule]]
-name = "vms-install"
-when = { device_class = ["virtual"] }
-profile = "install"
-
-[[rule]]
-name = "leave-the-switches-alone"
-when = { device_class = ["network"] }
-profile = "hands-off"
-"#;
+    fn rules_policy() -> serde_json::Value {
+        serde_json::json!({
+            "settings": {
+                "default_profile": "menu"
+            },
+            "bootloaders": {
+                "bios": "ipxe/undionly.kpxe",
+                "x64-uefi": "ipxe/ipxe.efi"
+            },
+            "profiles": {
+                "menu": {
+                    "kind": "menu",
+                    "entries": [
+                        {
+                            "profile": "local"
+                        }
+                    ]
+                },
+                "local": {
+                    "kind": "local"
+                },
+                "install": {
+                    "label": "Ubuntu 24.04",
+                    "kernel": "{{base}}/ubuntu/vmlinuz"
+                },
+                "hands-off": {
+                    "kind": "ignore"
+                },
+                "pxelinux": {
+                    "kind": "local",
+                    "bootfile": {
+                        "default": "pxelinux.0"
+                    }
+                }
+            },
+            "rule": [
+                {
+                    "name": "vms-install",
+                    "when": {
+                        "device_class": [
+                            "virtual"
+                        ]
+                    },
+                    "profile": "install"
+                },
+                {
+                    "name": "leave-the-switches-alone",
+                    "when": {
+                        "device_class": [
+                            "network"
+                        ]
+                    },
+                    "profile": "hands-off"
+                }
+            ]
+        })
+    }
 
     fn rules() -> RuleSet {
-        RuleSet::parse(RULES).unwrap()
+        RuleSet::from_json_value(rules_policy()).unwrap()
     }
 
     fn settings() -> ServerSettings {
@@ -587,7 +608,14 @@ profile = "hands-off"
     #[test]
     fn the_script_for_a_machine_nothing_matched_says_so_on_its_console() {
         // Rather than dropping it at an iPXE prompt nobody is watching.
-        let rules = RuleSet::parse("[profiles.x]\nkind = \"local\"\n").unwrap();
+        let rules = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "x": {
+                    "kind": "local"
+                }
+            }
+        }))
+        .unwrap();
         let machine = facts("aa:bb:cc:dd:ee:ff", ClientArch::BIOS, Stage::Ipxe);
         let decision = decide(&rules, &machine, &Overrides::default());
 

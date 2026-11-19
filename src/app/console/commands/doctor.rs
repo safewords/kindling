@@ -160,13 +160,29 @@ impl Command for DoctorCommand {
             report.fail(
                 "nothing would be told to boot anything",
                 "there are no rules and no default profile. Add them on the Policy screen, \
-                 or `pxe:rules --import=FILE`.",
+                 or with `pxe:rule add` and `pxe:policy default`.",
             );
         }
 
         // --- the boot root -------------------------------------------------
         if root.is_dir() {
             report.ok(format!("boot root: {}", root.display()), "");
+            report.ok(
+                "autoexec.ipxe is generated: stock iPXE chains to this server's boot script",
+                format!("{base}/boot.ipxe"),
+            );
+            if crate::pxe::tftp::server::resolve(&root, crate::pxe::autoexec::NAME)
+                .is_some_and(|path| path.exists())
+            {
+                report.warn(
+                    format!(
+                        "`{}` in the boot root is never served",
+                        crate::pxe::autoexec::NAME
+                    ),
+                    "This server answers that name itself, from its running address. Delete the \
+                     file so nobody edits it expecting it to matter.",
+                );
+            }
         } else {
             report.fail(
                 format!("boot root `{}` is not a directory", root.display()),

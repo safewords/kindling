@@ -24,6 +24,10 @@ struct Served {
 
 impl Served {
     async fn start(name: &str) -> Self {
+        Self::start_with(name, |server| server).await
+    }
+
+    async fn start_with(name: &str, configure: impl FnOnce(TftpServer) -> TftpServer) -> Self {
         let root = std::env::temp_dir().join(format!(
             "kindling-tftp-{}-{name}-{}",
             std::process::id(),
@@ -31,7 +35,7 @@ impl Served {
         ));
         std::fs::create_dir_all(&root).expect("a directory to serve");
 
-        let bound = TftpServer::new(&root, Arc::new(NoEvents))
+        let bound = configure(TftpServer::new(&root, Arc::new(NoEvents)))
             .bind("127.0.0.1:0".parse().unwrap())
             .await
             .expect("an ephemeral port");
@@ -353,4 +357,40 @@ async fn a_subdirectory_is_reachable_however_the_firmware_spells_the_path() {
         let (received, _) = served.fetch(spelling, &[]).await.expect("served");
         assert_eq!(received, b"loader", "{spelling}");
     }
+}
+
+#[tokio::test]
+async fn autoexec_is_answered_from_memory_whatever_the_root_holds() {
+    // Stock iPXE asks for it before anything else. It is generated from the
+    // running address, so a stale file of the same name in the root — the
+    // hand-placed workaround this replaced — is never what a machine gets.
+    let script = pxe::pxe::autoexec::script("http://10.0.0.2:8081");
+    let served = Served::start_with("autoexec", |server| {
+        server.with_generated(pxe::pxe::autoexec::NAME, script.clone())
+    })
+    .await;
+    served.write(
+        "autoexec.ipxe",
+        b"#!ipxe\nchain http://10.0.0.99:8080/boot.ipxe\n",
+    );
+
+    for spelling in ["autoexec.ipxe", "/autoexec.ipxe", "AUTOEXEC.IPXE"] {
+        let (bytes, _) = served.fetch(spelling, &[]).await.expect("served");
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            script,
+            "asked as `{spelling}`"
+        );
+    }
+
+    // And over more than one block, with options, like any other file.
+    let (bytes, agreed) = served
+        .fetch("autoexec.ipxe", &[("blksize", "8"), ("tsize", "0")])
+        .await
+        .expect("served in small blocks");
+    assert_eq!(String::from_utf8(bytes).unwrap(), script);
+    assert_eq!(
+        agreed.get("tsize").map(String::as_str),
+        Some(script.len().to_string().as_str())
+    );
 }

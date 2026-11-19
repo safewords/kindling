@@ -46,7 +46,7 @@ pub(crate) const INSTALLS: [(&str, &str, &str); 5] = [
 ];
 
 /// The architecture names this project already uses elsewhere, accepted as
-/// well as iPXE's, so `--arch=x64-uefi` means what the policy file means.
+/// well as iPXE's, so `--arch=x64-uefi` means what the policy means.
 pub(crate) fn normalise_arch(name: &str) -> Option<&'static str> {
     match name.trim().to_ascii_lowercase().as_str() {
         "bios" | "pcbios" | "i386-pcbios" => Some("bios"),
@@ -375,7 +375,7 @@ impl Command for IpxeCommand {
              pxe:ipxe --install [options]     Copy a build over the loaders in use\n\n\
              Options:\n  \
              --arch=…          bios, x86_64-efi, i386-efi, arm64-efi (comma-separated;\n                    \
-             the policy file's names work too). Default: all of them\n  \
+             the policy's names work too). Default: all of them\n  \
              --embed-base=…    The server URL to compile in. Default: PXE_HTTP_BASE.\n                    \
              `none` builds one that finds the server through DHCP\n  \
              --engine=…        docker or podman. Default: whichever is running\n  \

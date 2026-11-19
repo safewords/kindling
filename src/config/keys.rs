@@ -14,8 +14,6 @@ config_keys! {
     pub PXE_HTTP_BASE: String = "pxe.http_base";
     /// What the PXE menu line says on a client's screen.
     pub PXE_DESCRIPTION: String = "pxe.description";
-    /// The boot policy file.
-    pub PXE_RULES_PATH: String = "pxe.rules_path";
     /// The directory TFTP serves and HTTP mirrors.
     pub PXE_TFTP_ROOT: String = "pxe.tftp_root";
     /// An optional IEEE OUI listing, for vendor names beyond the built-ins.

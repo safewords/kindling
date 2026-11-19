@@ -149,9 +149,7 @@ export const api = {
   policySchema: () => request("GET", "/api/policy/schema"),
   validatePolicy: (candidate) => request("POST", "/api/policy/validate", candidate),
   previewPolicy: (candidate) => request("POST", "/api/policy/preview", candidate),
-  replacePolicy: (payload) => request("PUT", "/api/policy", payload),
   reloadPolicy: () => request("POST", "/api/rules/reload"),
-  exportUrl: (format) => `/api/policy/export?format=${format}`,
 
   addRule: (rule) => request("POST", "/api/policy/rules", rule),
   putRule: (name, rule) => request("PUT", `/api/policy/rules/${encodeURIComponent(name)}`, rule),

@@ -133,8 +133,9 @@ const tone = computed(() => ({
         <template v-if="session.tokenNotConfigured">
           <div class="flex-1">
             <b>No API token is configured on this server</b>, so everything that changes
-            what a machine boots is closed. Set <code class="font-mono">PXE_API_TOKEN</code>
-            in <code class="font-mono">.env</code> and restart. Reading is unaffected.
+            what a machine boots is closed. Set <code class="font-mono">token</code> under
+            <code class="font-mono">[api]</code> in <code class="font-mono">kindling.toml</code> (or
+            <code class="font-mono">PXE_API_TOKEN</code> in the environment) and restart. Reading is unaffected.
           </div>
         </template>
         <template v-else>

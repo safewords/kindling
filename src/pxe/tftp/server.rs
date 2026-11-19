@@ -9,6 +9,14 @@
 //! Every transfer gets its own socket, as RFC 1350 requires: the server's
 //! well-known port only ever carries the first packet of a conversation, and
 //! the rest happens between two ephemeral ports.
+//!
+//! A few names are *generated* rather than read from the root — see
+//! [`TftpServer::with_generated`]. `autoexec.ipxe` is the one that matters:
+//! stock iPXE asks the server it was loaded from for it before anything else,
+//! and this server answers with a script that chains to its own HTTP address.
+//! It is produced from the running configuration, so it cannot be forgotten,
+//! cannot point at an old address, and a file of the same name in the root is
+//! ignored.
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -80,6 +88,8 @@ pub struct TftpServer {
     root: PathBuf,
     events: Arc<dyn TftpEvents>,
     limits: Limits,
+    /// Files answered from memory, by lower-cased name without a leading `/`.
+    generated: BTreeMap<String, Arc<Vec<u8>>>,
 }
 
 impl TftpServer {
@@ -88,7 +98,24 @@ impl TftpServer {
             root: root.into(),
             events,
             limits: Limits::default(),
+            generated: BTreeMap::new(),
         }
+    }
+
+    /// Answer `name` with these bytes instead of a file from the root.
+    ///
+    /// Matched without regard to case or a leading `/`, the way firmware and
+    /// iPXE spell names. A file of the same name in the root is not served.
+    #[must_use = "this returns a configured server rather than configuring in place"]
+    pub fn with_generated(mut self, name: &str, bytes: impl Into<Vec<u8>>) -> Self {
+        self.generated
+            .insert(generated_key(name), Arc::new(bytes.into()));
+        self
+    }
+
+    /// Whether `name` is answered from memory.
+    pub fn is_generated(&self, name: &str) -> bool {
+        self.generated.contains_key(&generated_key(name))
     }
 
     #[must_use = "this returns a configured server rather than configuring in place"]
@@ -181,25 +208,42 @@ impl TftpServer {
             return;
         }
 
-        let Some(path) = resolve(&self.root, &filename) else {
-            tracing::warn!(%peer, filename, "refused a TFTP path that left the root");
-            self.events
-                .read(
-                    filename,
+        let source = if let Some(bytes) = self.generated.get(&generated_key(&filename)) {
+            Ok(Source::Memory(Arc::clone(bytes)))
+        } else {
+            let Some(path) = resolve(&self.root, &filename) else {
+                tracing::warn!(%peer, filename, "refused a TFTP path that left the root");
+                self.events
+                    .read(
+                        filename,
+                        peer,
+                        ReadOutcome::Denied("that path is outside the TFTP root"),
+                    )
+                    .await;
+                let _ = reply_error(
                     peer,
-                    ReadOutcome::Denied("that path is outside the TFTP root"),
+                    ErrorCode::AccessViolation,
+                    "that path is outside the root",
                 )
                 .await;
-            let _ = reply_error(
-                peer,
-                ErrorCode::AccessViolation,
-                "that path is outside the root",
-            )
-            .await;
-            return;
+                return;
+            };
+            Source::open(&path).await
         };
 
-        match self.transfer(&path, &request, peer).await {
+        let shown_path = || match &source {
+            Ok(Source::Memory(_)) => "(generated)".to_string(),
+            _ => resolve(&self.root, &filename)
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        };
+        let path_for_log = shown_path();
+
+        let outcome = match source {
+            Ok(source) => self.transfer(source, &request, peer).await,
+            Err(e) => Err(e),
+        };
+        match outcome {
             Ok(bytes) => {
                 tracing::info!(%peer, filename, bytes, "served over TFTP");
                 self.events
@@ -207,7 +251,7 @@ impl TftpServer {
                     .await;
             }
             Err(TransferError::NotFound) => {
-                tracing::info!(%peer, filename, path = %path.display(), "TFTP file not found");
+                tracing::info!(%peer, filename, path = %path_for_log, "TFTP file not found");
                 self.events
                     .read(filename.clone(), peer, ReadOutcome::NotFound)
                     .await;
@@ -242,19 +286,11 @@ impl TftpServer {
     /// One file, on its own socket.
     async fn transfer(
         &self,
-        path: &Path,
+        mut source: Source,
         request: &ReadRequest,
         peer: SocketAddr,
     ) -> Result<u64, TransferError> {
-        let mut file = match tokio::fs::File::open(path).await {
-            Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Err(TransferError::NotFound)
-            }
-            Err(e) => return Err(TransferError::Io(e)),
-        };
-
-        let size = file.metadata().await.map_err(TransferError::Io)?.len();
+        let size = source.size().await.map_err(TransferError::Io)?;
 
         // RFC 1350: the transfer moves to a fresh port immediately. Connecting
         // it means a packet from anywhere else is dropped by the kernel rather
@@ -290,7 +326,8 @@ impl TftpServer {
 
         while base < total_blocks {
             while sent < total_blocks && sent - base < window_size as u64 {
-                let payload = read_block(&mut file, sent, block_size, &mut buffer)
+                let payload = source
+                    .block(sent, block_size, &mut buffer)
                     .await
                     .map_err(TransferError::Io)?;
                 socket
@@ -456,23 +493,61 @@ fn acknowledged_index(block: u16, base: u64, sent: u64) -> Option<u64> {
     (base..sent).find(|index| block_number(*index) == block)
 }
 
-async fn read_block<'a>(
-    file: &mut tokio::fs::File,
-    index: u64,
-    block_size: u16,
-    buffer: &'a mut [u8],
-) -> std::io::Result<&'a [u8]> {
-    let offset = index * block_size as u64;
-    file.seek(std::io::SeekFrom::Start(offset)).await?;
+/// What a transfer reads from: a file in the root, or bytes generated here.
+enum Source {
+    File(tokio::fs::File),
+    Memory(Arc<Vec<u8>>),
+}
 
-    let mut filled = 0usize;
-    while filled < buffer.len() {
-        match file.read(&mut buffer[filled..]).await? {
-            0 => break,
-            read => filled += read,
+impl Source {
+    async fn open(path: &Path) -> Result<Self, TransferError> {
+        match tokio::fs::File::open(path).await {
+            Ok(file) => Ok(Source::File(file)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(TransferError::NotFound),
+            Err(e) => Err(TransferError::Io(e)),
         }
     }
-    Ok(&buffer[..filled])
+
+    async fn size(&self) -> std::io::Result<u64> {
+        match self {
+            Source::File(file) => Ok(file.metadata().await?.len()),
+            Source::Memory(bytes) => Ok(bytes.len() as u64),
+        }
+    }
+
+    async fn block<'a>(
+        &mut self,
+        index: u64,
+        block_size: u16,
+        buffer: &'a mut [u8],
+    ) -> std::io::Result<&'a [u8]> {
+        let offset = index * block_size as u64;
+        match self {
+            Source::File(file) => {
+                file.seek(std::io::SeekFrom::Start(offset)).await?;
+                let mut filled = 0usize;
+                while filled < buffer.len() {
+                    match file.read(&mut buffer[filled..]).await? {
+                        0 => break,
+                        read => filled += read,
+                    }
+                }
+                Ok(&buffer[..filled])
+            }
+            Source::Memory(bytes) => {
+                let start = (offset as usize).min(bytes.len());
+                let end = (start + buffer.len()).min(bytes.len());
+                let length = end - start;
+                buffer[..length].copy_from_slice(&bytes[start..end]);
+                Ok(&buffer[..length])
+            }
+        }
+    }
+}
+
+/// How a generated name is looked up: case and a leading `/` do not matter.
+fn generated_key(name: &str) -> String {
+    name.trim_start_matches(['/', '\\']).to_ascii_lowercase()
 }
 
 async fn recv_packet(

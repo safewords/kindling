@@ -64,6 +64,11 @@ impl Command for ServeCommand {
 
         banner(&service, server_ip, &http_base, &tftp_root, dhcp, tftp);
 
+        // Changes made from another process — `pxe:rule` and friends — reach
+        // this one through the database. See `RuleStore::follow_database`.
+        let store = app.resolve::<crate::app::services::RuleStore>()?;
+        tokio::spawn(store.follow_database(std::time::Duration::from_secs(2)));
+
         // The privileged UDP ports are bound here, before anything serves. A
         // port that was already taken is then a message at a terminal
         // somebody is looking at, rather than a rack that was offered a file
@@ -117,7 +122,14 @@ impl Command for ServeCommand {
                 max_block_size: settings.get_or(PXE_TFTP_MAX_BLOCK_SIZE, 1468u16),
                 max_window_size: settings.get_or(PXE_TFTP_MAX_WINDOW_SIZE, 16u16),
                 ..Limits::default()
-            });
+            })
+            // Always: stock iPXE asks for it before anything else, and a
+            // machine that does not get it may never fetch its script. See
+            // `pxe::autoexec`.
+            .with_generated(
+                crate::pxe::autoexec::NAME,
+                crate::pxe::autoexec::script(&http_base),
+            );
 
             let bound = files
                 .bind((bind, tftp_port).into())
@@ -231,6 +243,9 @@ fn banner(
         "  TFTP                           {}",
         if tftp { "on (69)" } else { "off" }
     );
+    if tftp {
+        println!("  autoexec.ipxe                  generated: chains to {http_base}/boot.ipxe");
+    }
 
     if rules.rules().is_empty() && rules.settings().default_profile.is_none() {
         println!(

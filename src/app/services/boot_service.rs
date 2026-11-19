@@ -401,33 +401,48 @@ mod tests {
     use crate::pxe::facts::Stage;
     use crate::pxe::rules::RuleSet;
 
-    const RULES: &str = r#"
-[settings]
-default_profile = "menu"
-
-[profiles.menu]
-kind = "menu"
-entries = [{ profile = "local" }]
-
-[profiles.local]
-kind = "local"
-
-[profiles.install]
-kernel = "{{base}}/vmlinuz"
-
-[[rule]]
-name = "new-machines-install"
-when = { known = false }
-profile = "install"
-tag = ["provisioned"]
-"#;
+    fn rules_policy() -> serde_json::Value {
+        serde_json::json!({
+            "settings": {
+                "default_profile": "menu"
+            },
+            "profiles": {
+                "menu": {
+                    "kind": "menu",
+                    "entries": [
+                        {
+                            "profile": "local"
+                        }
+                    ]
+                },
+                "local": {
+                    "kind": "local"
+                },
+                "install": {
+                    "kernel": "{{base}}/vmlinuz"
+                }
+            },
+            "rule": [
+                {
+                    "name": "new-machines-install",
+                    "when": {
+                        "known": false
+                    },
+                    "profile": "install",
+                    "tag": [
+                        "provisioned"
+                    ]
+                }
+            ]
+        })
+    }
 
     #[test]
     fn a_rule_on_known_reads_the_boot_that_created_the_row_as_new() {
         // The subtle one. `observe` creates the row before the decision is
         // made, so reading `known` off the row would make every machine known
         // on its very first boot and the rule would never fire once.
-        let rules = RuleSet::parse(RULES).unwrap();
+        let rules = RuleSet::from_json_value(rules_policy()).unwrap();
         let facts = ClientFacts::new(
             "18:66:da:11:22:33".parse().unwrap(),
             ClientArch::X64_UEFI,
@@ -466,7 +481,7 @@ tag = ["provisioned"]
     fn an_unreachable_inventory_still_produces_a_decision() {
         // The degraded path, asserted on directly: with no overrides at all, a
         // machine still gets whatever the rules say.
-        let rules = RuleSet::parse(RULES).unwrap();
+        let rules = RuleSet::from_json_value(rules_policy()).unwrap();
         let facts = ClientFacts::new(
             "18:66:da:11:22:33".parse().unwrap(),
             ClientArch::X64_UEFI,

@@ -1,10 +1,11 @@
 /target
 /node_modules
 
+# Service settings hold the API token and the app key.
+/kindling.toml
+/kindling.toml.bak
 /.env
-# The backups the editors keep beside the files they write.
-/.env.bak
-/pxe-rules.toml.bak
+/.env.converted
 
 /storage/*.sqlite
 /storage/*.sqlite-*

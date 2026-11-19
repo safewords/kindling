@@ -157,16 +157,19 @@ mod tests {
     #[test]
     fn a_decision_becomes_a_row_that_says_which_rule_chose_it() {
         // The whole point of the table: "why did this machine boot that".
-        let rules = RuleSet::parse(
-            r#"
-[profiles.install]
-kernel = "x"
-
-[[rule]]
-name = "everything-installs"
-profile = "install"
-"#,
-        )
+        let rules = RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "install": {
+                    "kernel": "x"
+                }
+            },
+            "rule": [
+                {
+                    "name": "everything-installs",
+                    "profile": "install"
+                }
+            ]
+        }))
         .unwrap();
 
         let facts = facts();

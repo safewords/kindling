@@ -61,12 +61,16 @@ Every rule, in order
 - **An admin interface** (Vue 3 + Tailwind, built locally, no CDN) with a
   device pane, a step-by-step **rule wizard** and profile wizard that show which
   of your machines a change would affect before you save it, and a
-  configuration editor that refuses to save a `.env` that would not start.
+  settings editor for `kindling.toml` that refuses to save one that would not
+  start.
+- **A console** that changes the policy one decision at a time — `pxe:rule`,
+  `pxe:profile`, `pxe:policy` — through the same validated, versioned path as
+  the web UI. A running server picks a change up within seconds.
 
 ## Quick start
 
 ```sh
-cp .env.example .env    # the policy itself is seeded into the database on first start
+cp kindling.example.toml kindling.toml   # how this server is hosted; nothing else
 
 # the stage-one loaders. Note the EFI builds live under an architecture
 # directory; only the BIOS one is at the root.
@@ -81,6 +85,19 @@ sudo -E cargo run -- pxe:serve     # 67, 69 and 4011 are privileged ports
 Then <http://localhost:8080>, and the **Policy** screen. On Windows, an elevated prompt; or
 `pxe:serve --no-dhcp --no-tftp` to run only the HTTP half while you write
 policy.
+
+A new database starts with a policy that **answers nobody** (default profile
+`hands-off`, no rules), so starting kindling on a busy network changes nothing
+until you say so — in the web UI, or from a terminal:
+
+```sh
+cargo run -- pxe:profile set rescue --kernel='{{boot}}/vmlinuz' \
+    --initrd='{{boot}}/initramfs.img' --cmdline='ip=dhcp'
+cargo run -- pxe:rule add rescue-lab --profile=rescue --priority=300 \
+    --when=mac=18:66:da:11:22:33,18:66:da:11:22:34
+cargo run -- pxe:test --mac=18:66:da:11:22:33   # what it would boot now, and why
+cargo run -- pxe:rule set rescue-lab --no-profile   # done: back to the default
+```
 
 The admin interface ships pre-built. To work on it:
 
@@ -101,8 +118,9 @@ cargo run -- pxe:test --mac=…   # what would this machine boot, and why
 cargo run -- pxe:hosts          # the inventory
 cargo run -- pxe:log            # what has actually happened
 cargo run -- pxe:pin --mac=… --profile=ubuntu-2404 --once
-cargo run -- pxe:rules --check=policy.toml  # validate a file before --import; what a deploy runs
+cargo run -- pxe:rules                      # the policy in force
 cargo run -- pxe:rules --history            # every policy change; --restore=ID rolls back
+cargo run -- pxe:db:backup --to=backup.sqlite  # the whole database, consistently
 cargo run -- pxe:ipxe --build   # compile this project's own iPXE (see below)
 ```
 
@@ -147,6 +165,18 @@ sequenceDiagram
     Note over H: the rules run
     H-->>I: the machine's image
 ```
+
+### `autoexec.ipxe`, generated
+
+Stock iPXE — the `ipxe.efi` anybody downloads — asks the TFTP server it was
+loaded from for `autoexec.ipxe` before it does anything else. kindling always
+answers that name itself, from memory, with a script that chains to its own
+`/boot.ipxe`. Without it, some firmware and loader combinations ignore the
+proxy's HTTP boot filename and stop at "Nothing to boot"; with it, there is
+nothing to stage, nothing to forget when a server is set up or moved, and
+nothing that can point at an address the server no longer has. A file of
+that name in the boot root is never served (`pxe:doctor` warns about one).
+Loaders from `pxe:ipxe --build` carry their own script and never ask.
 
 Two things about that shape. The reply to iPXE is a **script, not iPXE again**
 — without that check a machine chainloads iPXE from iPXE for ever. And the
@@ -196,8 +226,8 @@ goes to the server it was built for — or, built with `--embed-base=none`, to
 the proxy's or router's `next-server` — and asks for `/boot.ipxe` with every
 fact the reflector would have asked for, saving a round trip. It never
 follows a DHCP boot filename that names a loader, so a router whose "Network
-Boot" option says `ipxe.efi` cannot send it round in a circle; that is the
-failure `tftproot/autoexec.ipxe` currently papers over. If nothing answers it
+Boot" option says `ipxe.efi` cannot send it round in a circle. (A stock loader
+is covered too: see `autoexec.ipxe` under *How a boot goes*.) If nothing answers it
 says so on screen, counts down, and hands back to the firmware — or, on a
 keypress, to the iPXE shell, which has `ping`, `nslookup` and HTTPS.
 
@@ -252,16 +282,15 @@ no answer — with the iPXE it would produce rendered beside it as you type.
 Renaming a profile carries every rule, menu entry and default with it.
 
 **History** lists every change, whole, with who made it; restoring one is
-itself a change, so a rollback can be rolled back. **Import / export** moves
-the policy as JSON or TOML, and an import is checked, and its effect on known
-machines shown, before it replaces anything.
+itself a change, so a rollback can be rolled back. There is no import or
+export: the policy is not kept in files (see *The policy*).
 
-**Configuration** edits `.env` the same way, in place, with a catalogue that
-says what each of the 24 settings is for and what goes wrong when it is wrong.
-A proposed file is run through the *same* `configure` the server boots with
-before it is written, so you cannot save a `.env` that will not start. It is
-honest about the restart: configuration is read once, at startup, and the
-screen says so rather than implying otherwise.
+**Configuration** edits `kindling.toml` in place — comments and order kept —
+with a catalogue that says what each setting is for and what goes wrong when
+it is wrong. A proposed file is run through the *same* parser and `configure`
+the server boots with before it is written, so you cannot save one that will
+not start, or one with policy in it. It is honest about the restart: service
+settings are read once, at startup, and the screen says so.
 
 Everything that changes what a machine boots — including both editors — is
 behind the API token.
@@ -270,12 +299,12 @@ behind the API token.
 
 The policy lives in the database: one table each for rules, profiles, boot
 loaders and settings, and a `policy_revisions` table holding every version
-whole. Every change — from the wizard, the API, the console, an import or a
+whole. Every change — from the wizard, the API, the console commands or a
 rollback — goes through one path:
 
 ```mermaid
 flowchart LR
-    E["Edit<br/>wizard · API · console · import · restore"] --> C["Apply to a copy of<br/>the running policy"]
+    E["Edit<br/>wizard · API · pxe:rule/profile/policy · restore"] --> C["Apply to a copy of<br/>the running policy"]
     C --> V{"Validate and compile<br/>(the loader the server boots with)"}
     V -- problems --> R["Refused, every problem listed<br/>nothing stored, nothing changes"]
     V -- valid --> S["Write the rows that differ"]
@@ -287,12 +316,30 @@ Edits are serialised, and one made against an older revision (the
 `x-policy-revision` header, which the web UI always sends) is refused with a
 409 rather than silently overwriting a change its author never saw.
 
-**Upgrading from the file-based release:** on the first start against an
-empty database, the TOML file at `PXE_RULES_PATH` (default `pxe-rules.toml`)
-is imported and becomes revision 1; after that it is never read. Without one,
-the starter policy in
-[`src/database/seeds/starter-policy.toml`](src/database/seeds/starter-policy.toml)
-is seeded — the same text `pxe:rules --example` prints.
+A change made by a console command in another process reaches a running
+`pxe:serve` through the database: it looks at the newest revision every two
+seconds and reloads when it is not the one running. Nothing to restart, no
+signal to send.
+
+**The policy is never read from a file.** Not on first start, not by import,
+not from `kindling.toml` (a `[profiles]` or `[[rule]]` table there stops the
+server with a message saying where the policy lives). A policy kept in a text
+file is a second source of truth, and the copy that drifts is always the one
+somebody deploys. The database's revisions are the history; `pxe:db:backup`
+is the backup. A new database is seeded with a starter that answers nobody.
+
+## Configuration
+
+`kindling.toml` (or the file `KINDLING_CONFIG` names) holds how the server is
+hosted, and nothing else — see [`kindling.example.toml`](kindling.example.toml)
+for every key. A variable set in the process environment (`PXE_API_TOKEN`,
+`SERVER_PORT`, …) wins over the file, which is what a container or a systemd
+unit wants for a secret. An unknown key is an error that lists the ones that
+exist, rather than a setting that silently does nothing.
+
+A `.env` from an earlier release is converted into `kindling.toml` on the
+first start without one, and moved aside to `.env.converted`. A
+`PXE_RULES_PATH` in it is dropped: there are no policy files.
 
 ### Rules
 
@@ -410,11 +457,9 @@ GET    /api/policy/schema           facts, operators, profile kinds — what the
 POST   /api/policy/validate         would this rule / document load?   (writes nothing)
 POST   /api/policy/preview          which known machines would it change? (writes nothing)
 POST   /api/policy/profiles/render  the iPXE an unsaved profile produces
-GET    /api/policy/export           ?format=json|toml
 GET    /api/policy/revisions[/{id}] the history
 GET    /api/policy/templates        the wizard's saved starting points
 
-PUT    /api/policy                  replace it all: {"document"} or {"text"} ← token
 POST   /api/policy/rules            add a rule                            ← token
 PUT    /api/policy/rules/{name}     replace (and maybe rename) a rule     ← token
 PATCH  /api/policy/rules/{name}     change some fields; null clears       ← token
@@ -445,12 +490,13 @@ once, so a mistake saved mid-rollout cannot leave a rack with no policy.
 - **It hands out no IP addresses, ever.** Proxy DHCP answers boot questions
   beside your existing DHCP server rather than replacing it. `yiaddr` is always
   `0.0.0.0` and there is no lease, no netmask and no gateway in any reply.
-- **Policy is data, with its history.** It used to be a file in version
-  control, for review and rollback. Those survive the move: every change is a
-  revision holding the whole policy, attributed and restorable, and export
-  gives a reviewable file whenever one is wanted. What the move adds is a
-  policy that can be built by somebody who has never seen its syntax, checked
-  against the real inventory before it is saved.
+- **Policy is data, with its history, and only data.** It used to be a file in
+  version control, for review and rollback. Those survive the move: every
+  change is a revision holding the whole policy, attributed, diffable on the
+  History screen and restorable. What the move adds is a policy that can be
+  built by somebody who has never seen its syntax, checked against the real
+  inventory before it is saved — and one copy of it, not a file and a
+  database that disagree.
 - **A machine boots even when the database does not.** A failed inventory query
   logs, degrades to "no overrides, never seen before", and the rack comes up.
   Reporting is not the decision path.
@@ -494,11 +540,11 @@ src/
     policy.rs     facts + rules + overrides → a decision
   app/            where that meets storage, config and the network
     models/       the inventory, the boot log and the policy tables
-    services/     the policy store, the env editor, the loop breaker
+    services/     the policy store, the settings editor, the loop breaker
     http/         controllers, the token guard, the kernel
-    console/      pxe:serve, pxe:rules, pxe:test, pxe:hosts, pxe:pin, pxe:ipxe, …
-  config/         one module per concern, read from .env
-  database/       migrations, and the starter policy seed
+    console/      pxe:serve, pxe:rule, pxe:profile, pxe:policy, pxe:test, pxe:hosts, …
+  config/         one module per concern, read from kindling.toml
+  database/       migrations
 ```
 
 Everything in `pxe/` is a pure function of its inputs and is tested without a
@@ -511,7 +557,7 @@ hypothetical questions.
 cargo test
 ```
 
-299 of them: the packet codecs against malformed input, the rule engine against
+Over 340 of them: the packet codecs against malformed input, the rule engine against
 its own trace, and — over real sockets on ephemeral ports — a TFTP transfer
 whose length is an exact multiple of the block size (the classic hang), path
 traversal in four spellings, RFC 7440 windowing, and a proxy DHCP exchange from

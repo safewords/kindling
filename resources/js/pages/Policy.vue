@@ -43,7 +43,7 @@ async function load({ quiet = false } = {}) {
 
 onMounted(load);
 
-const busy = computed(() => saving.value || editingRule.value !== undefined || editingProfile.value !== undefined || importing.value);
+const busy = computed(() => saving.value || editingRule.value !== undefined || editingProfile.value !== undefined);
 
 useLive({
   policy: () => (busy.value ? (stale.value = !saving.value) : load({ quiet: true })),
@@ -170,39 +170,6 @@ async function view(revision) {
 const restore = (revision) =>
   act(() => api.restoreRevision(revision.id), `Revision ${revision.id} restored.`).then((ok) => ok && (confirmDelete.value = null));
 
-// --- import ---
-const importText = ref("");
-const importCheck = ref(null);
-const importing = ref(false);
-async function readFile(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  importText.value = await file.text();
-  checkImport();
-}
-async function checkImport() {
-  if (!importText.value.trim()) return (importCheck.value = null);
-  importing.value = true;
-  try {
-    const [validated, impact] = await Promise.all([
-      api.validatePolicy({ text: importText.value }),
-      api.previewPolicy({ text: importText.value }),
-    ]);
-    importCheck.value = { ...validated, impact: impact.ok ? impact : null };
-  } catch (e) {
-    importCheck.value = { ok: false, problems: [e.message] };
-  } finally {
-    importing.value = false;
-  }
-}
-async function doImport() {
-  const ok = await act(() => api.replacePolicy({ text: importText.value }), "Policy imported.");
-  if (ok) {
-    importText.value = "";
-    importCheck.value = null;
-  }
-}
-
 // --- the tester ---
 const subject = ref({ mac: "18:66:da:11:22:33", arch: "x64-uefi", stage: "ipxe", product: "", hostname: "", client_ip: "" });
 const result = ref(null);
@@ -232,7 +199,6 @@ const TABS = [
   ["settings", "Settings"],
   ["test", "Test a machine"],
   ["history", "History"],
-  ["transfer", "Import / export"],
 ];
 
 const does = (rule) => {
@@ -572,54 +538,6 @@ const does = (rule) => {
           </td>
         </tr>
       </table>
-    </section>
-
-    <!-- Import / export -->
-    <section v-else-if="tab === 'transfer'" class="space-y-5">
-      <div class="flex flex-wrap items-center gap-3">
-        <p class="flex-1 text-sm text-slate-500">
-          Download the running policy for review or backup, or replace it with one — JSON from an export, or a TOML
-          policy file from an earlier release.
-        </p>
-        <a :href="api.exportUrl('json')" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500">Export JSON</a>
-        <a :href="api.exportUrl('toml')" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500">Export TOML</a>
-      </div>
-
-      <div class="space-y-2">
-        <div class="flex items-center gap-3">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Import</h3>
-          <input type="file" accept=".json,.toml,application/json" class="text-xs text-slate-400" @change="readFile" />
-        </div>
-        <textarea
-          v-model="importText"
-          rows="12"
-          spellcheck="false"
-          placeholder="…or paste a policy here"
-          class="w-full rounded-lg border border-slate-800 bg-slate-950 p-3 font-mono text-[12px] text-slate-200 outline-none focus:border-slate-600"
-          @input="importCheck = null"
-        ></textarea>
-        <div class="flex items-center gap-3">
-          <button class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500" :disabled="importing || !importText" @click="checkImport">
-            {{ importing ? "Checking…" : "Check" }}
-          </button>
-          <button
-            class="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-amber-300 disabled:opacity-40"
-            :disabled="!importCheck?.ok || saving"
-            @click="doImport"
-          >
-            Replace the running policy
-          </button>
-        </div>
-        <div v-if="importCheck && !importCheck.ok" class="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-          <div v-for="p in importCheck.problems" :key="p">{{ p }}</div>
-        </div>
-        <p v-else-if="importCheck?.ok" class="text-xs text-emerald-300">
-          Valid: {{ importCheck.rules }} rules, {{ importCheck.profiles }} profiles.
-          <template v-if="importCheck.impact">
-            {{ importCheck.impact.changes }} of {{ importCheck.impact.hosts }} known machine(s) would boot something different.
-          </template>
-        </p>
-      </div>
     </section>
 
     <!-- Dialogs -->

@@ -19,11 +19,9 @@
 //!   which revision it was looking at is refused rather than allowed to
 //!   silently overwrite a change it never saw.
 //!
-//! The policy used to be a TOML file. On the first boot against an empty
-//! database that file, if it is still there, is imported — so an upgrade keeps
-//! its policy — and otherwise the starter policy is seeded.
+//! The database is the only place the policy lives. Nothing reads it from a
+//! file; an empty database is seeded with a starter that answers nobody.
 
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Utc};
@@ -32,10 +30,6 @@ use crate::app::models::PolicyRevision;
 use crate::app::repositories::PolicyRepository;
 use crate::app::services::{LiveFeed, LiveUpdate};
 use crate::pxe::rules::{LoadError, Origin, PolicyDocument, RuleSet};
-
-/// The policy a new install starts with. The same text `pxe:rules --example`
-/// prints, so the example can never drift from the default.
-pub const STARTER_POLICY: &str = include_str!("../../database/seeds/starter-policy.toml");
 
 /// Why a change was not made.
 #[derive(Debug, Clone)]
@@ -234,13 +228,13 @@ impl RuleStore {
 
     /// Read the policy at boot.
     ///
-    /// On an empty database — a new install, or the first boot after
-    /// upgrading from the file-based release — a policy is put there first:
-    /// the file at `import`, if it exists, otherwise the starter. A stored
-    /// policy that does not validate stops the boot: starting with no policy
-    /// would mean a rack that boots nothing, which is a worse way to find out
-    /// than a message on a terminal.
-    pub async fn load(&self, import: Option<&Path>) -> Result<Arc<RuleSet>, LoadError> {
+    /// On an empty database — a new install — the starter is put there first:
+    /// a policy that answers nobody until somebody writes a rule (see
+    /// [`PolicyDocument::starter`]). Nothing is ever read from a file. A
+    /// stored policy that does not validate stops the boot: starting with no
+    /// policy would mean a rack that boots nothing, which is a worse way to
+    /// find out than a message on a terminal.
+    pub async fn load(&self) -> Result<Arc<RuleSet>, LoadError> {
         let repository = self
             .repository
             .as_ref()
@@ -248,29 +242,8 @@ impl RuleStore {
 
         let blank = repository.is_blank().await.map_err(storage_problem)?;
         if blank {
-            let (document, summary) = match import.filter(|path| path.exists()) {
-                Some(path) => {
-                    let rules = RuleSet::load(path)?;
-                    tracing::warn!(
-                        path = %path.display(),
-                        rules = rules.rules().len(),
-                        profiles = rules.profiles().len(),
-                        "imported the policy file into the database. It is no longer read: edit \
-                         the policy in the web UI, and delete or archive the file."
-                    );
-                    (
-                        rules.to_document(),
-                        format!("imported from `{}`", path.display()),
-                    )
-                }
-                None => {
-                    tracing::info!("no policy yet; seeding the starter policy");
-                    (
-                        PolicyDocument::from_toml(STARTER_POLICY)?,
-                        "the starter policy".to_string(),
-                    )
-                }
-            };
+            tracing::info!("no policy yet; seeding the starter, which answers nobody");
+            let (document, summary) = (PolicyDocument::starter(), "the starter policy".to_string());
             let rules = RuleSet::from_document(document, Origin::Database)?;
             let document = rules.to_document();
             repository.sync(&document).await.map_err(storage_problem)?;
@@ -281,6 +254,52 @@ impl RuleStore {
         }
 
         self.reload().await
+    }
+
+    /// Keep the running policy in step with the database, for as long as the
+    /// server runs.
+    ///
+    /// The web UI and the API change the policy inside this process, which
+    /// swaps it in at once. `pxe:rule`, `pxe:profile` and `pxe:policy` run as
+    /// separate processes and only write the database — so the server looks
+    /// at the newest revision every `every`, and reloads when it is not the
+    /// one running. One indexed read every couple of seconds; no restart,
+    /// and no signal to remember to send.
+    pub async fn follow_database(self: Arc<Self>, every: std::time::Duration) {
+        let Some(repository) = self.repository.clone() else {
+            return;
+        };
+        let mut ticker = tokio::time::interval(every);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // A revision that would not load. `reload` has logged and announced
+        // it and the old policy is still running; it is not re-read every
+        // tick, only when a newer revision appears.
+        let mut refused: Option<u64> = None;
+        loop {
+            ticker.tick().await;
+            let latest = match repository.latest().await {
+                Ok(latest) => latest.map(|r| r.id),
+                Err(e) => {
+                    tracing::warn!(error = %e.message(), "could not check the policy's revision");
+                    continue;
+                }
+            };
+            if latest.is_none() || latest == self.revision() || latest == refused {
+                continue;
+            }
+            match self.reload().await {
+                Ok(rules) => {
+                    refused = None;
+                    tracing::info!(
+                        revision = latest,
+                        rules = rules.rules().len(),
+                        profiles = rules.profiles().len(),
+                        "the policy changed in the database; reloaded"
+                    );
+                }
+                Err(_) => refused = latest,
+            }
+        }
     }
 
     /// Re-read the stored policy. On failure the running policy is untouched.
@@ -437,16 +456,6 @@ impl RuleStore {
         )
         .await
     }
-
-    /// Import a policy file into the database, replacing what is there.
-    pub async fn import(&self, path: &Path, actor: &str) -> Result<Applied, EditError> {
-        let rules = RuleSet::load(path)?;
-        self.replace(
-            EditMeta::new(format!("imported from `{}`", path.display()), actor),
-            rules.to_document(),
-        )
-        .await
-    }
 }
 
 fn storage_problem(e: rainier_framework::prelude::Error) -> LoadError {
@@ -456,27 +465,9 @@ fn storage_problem(e: rainier_framework::prelude::Error) -> LoadError {
     ))
 }
 
-/// Where an earlier release kept its policy file, relative to the working
-/// directory, for the one-time import.
-pub fn legacy_policy_path(configured: &str) -> Option<PathBuf> {
-    let trimmed = configured.trim();
-    (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_starter_policy_is_valid() {
-        let rules = RuleSet::from_document(
-            PolicyDocument::from_toml(STARTER_POLICY).unwrap(),
-            Origin::Database,
-        )
-        .expect("the starter policy must load");
-        assert!(!rules.rules().is_empty());
-        assert!(rules.settings().default_profile.is_some());
-    }
 
     #[tokio::test]
     async fn a_fixed_store_refuses_changes_and_says_why() {

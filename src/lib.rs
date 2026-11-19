@@ -3,11 +3,11 @@
 //! ```text
 //! src/
 //!   bootstrap.rs        assembles and boots the application
-//!   config/             one module per concern, read from .env
+//!   config/             one module per concern, read from kindling.toml
 //!   pxe/                the domain: DHCP, TFTP, rules, profiles, policy
 //!     dhcp/             the proxy DHCP responder and its packets
 //!     tftp/             a read-only TFTP server
-//!     rules.rs          the policy file and its matcher
+//!     rules.rs          the policy document and its matcher
 //!     profile.rs        what a machine is sent to boot
 //!     policy.rs         facts + rules + overrides → a decision
 //!   app/

@@ -43,9 +43,6 @@ pub fn routes(router: &mut Router) {
                 .get("/policy/schema", policy_controller::schema)
                 .name("policy.schema");
             router
-                .get("/policy/export", policy_controller::export)
-                .name("policy.export");
-            router
                 .get("/policy/revisions", policy_controller::revisions)
                 .name("policy.revisions");
             router
@@ -119,9 +116,6 @@ pub fn routes(router: &mut Router) {
             router
                 .post("/rules/reload", api_controller::reload)
                 .name("rules.reload");
-            router
-                .put("/policy", policy_controller::replace)
-                .name("policy.replace");
             router
                 .post("/policy/rules", policy_controller::add_rule)
                 .name("policy.rules.add");

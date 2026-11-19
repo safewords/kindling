@@ -33,8 +33,9 @@ answers it with a script instead of a loader, which is what stops the loop
 - A relay that strips option 77, or a second DHCP server that answers
   first, has the same effect.
 
-`tftproot/autoexec.ipxe` works around that for stock EFI builds. This build
-removes the cause: the script compiled into it never follows a boot filename
+The `autoexec.ipxe` kindling generates and serves over TFTP covers stock
+builds: they fetch it first and chain to `/boot.ipxe`. This build removes the
+cause: the script compiled into it never follows a boot filename
 that names a loader, and does not need one at all when it knows where the
 server is.
 
@@ -163,16 +164,14 @@ TFTP and HTTP before it is installed. To put one machine through it, copy the
 profile that machine would normally get, name the build as its loader, and
 pin the machine to the copy:
 
-```toml
-[profiles.ubuntu-2404-new-ipxe]
-label    = "Ubuntu 24.04, through this project's iPXE"
-bootfile = { x64-uefi = "ipxe-build/x86_64-efi/ipxe.efi", bios = "ipxe-build/bios/undionly.kpxe" }
-kernel   = "{{boot}}/images/ubuntu-24.04/vmlinuz"      # the rest as in ubuntu-2404
-initrd   = ["{{boot}}/images/ubuntu-24.04/initrd"]
-cmdline  = "autoinstall ds=nocloud-net;s={{base}}/seed/{{mac-hyphenless}}/"
-```
-
 ```sh
+cargo run -- pxe:profile set ubuntu-2404-new-ipxe \
+    --label="Ubuntu 24.04, through this project's iPXE" \
+    --bootfile=x64-uefi=ipxe-build/x86_64-efi/ipxe.efi \
+    --bootfile=bios=ipxe-build/bios/undionly.kpxe \
+    --kernel='{{boot}}/images/ubuntu-24.04/vmlinuz' \
+    --initrd='{{boot}}/images/ubuntu-24.04/initrd' \
+    --cmdline='autoinstall ds=nocloud-net;s={{base}}/seed/{{mac-hyphenless}}/'
 cargo run -- pxe:pin --mac=… --profile=ubuntu-2404-new-ipxe
 ```
 
@@ -196,8 +195,8 @@ half of each. Whatever is replaced is copied to
 `tftproot/ipxe-backup/<timestamp>/` first; copying it back is the undo.
 Nothing needs restarting: the next machine to boot gets the new loader.
 
-Once installed, `tftproot/autoexec.ipxe` is redundant — this build carries
-the same logic compiled in, and more of it.
+Once installed, the generated `autoexec.ipxe` is never asked for — this build
+carries the same logic compiled in, and more of it.
 
 ## CI
 

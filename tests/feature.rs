@@ -13,8 +13,9 @@
 use std::sync::Arc;
 
 use pxe::app::repositories::{BootEventRepository, HostRepository};
-use pxe::app::services::BootService;
+use pxe::app::services::{BootService, EditMeta, RuleStore};
 use pxe::pxe::mac::MacAddr;
+use pxe::pxe::rules::PolicyDocument;
 use pxe::{boot, Mode};
 use rainier_framework::prelude::*;
 use rainier_framework::testing::TestApp;
@@ -26,6 +27,242 @@ struct Server {
     app: TestApp,
 }
 
+/// The policy these tests run against: a menu, an installer, rules that
+/// classify and rules that image. Put into the database the way an operator
+/// would — through the store, as a revision — because there is no other way
+/// in: a new database starts with the starter, which answers nobody.
+fn fixture() -> serde_json::Value {
+    serde_json::json!({
+        "settings": {
+            "default_profile": "menu"
+        },
+        "bootloaders": {
+            "bios": "undionly.kpxe",
+            "x86-uefi": "ipxe32.efi",
+            "x64-uefi": "ipxe.efi",
+            "arm64-uefi": "ipxe-arm64.efi",
+            "default": "ipxe.efi"
+        },
+        "profiles": {
+            "local": {
+                "label": "Boot from the local disk",
+                "kind": "local"
+            },
+            "hands-off": {
+                "label": "Leave this machine alone",
+                "kind": "ignore"
+            },
+            "menu": {
+                "label": "kindling netboot",
+                "kind": "menu",
+                "timeout": 30,
+                "default": "local",
+                "entries": [
+                    {
+                        "profile": "local",
+                        "key": "l"
+                    },
+                    {
+                        "profile": "ubuntu-2404",
+                        "key": "u"
+                    },
+                    {
+                        "profile": "arch-r630",
+                        "key": "a"
+                    },
+                    {
+                        "profile": "memtest",
+                        "key": "m"
+                    },
+                    {
+                        "profile": "shell",
+                        "key": "s"
+                    }
+                ]
+            },
+            "ubuntu-2404": {
+                "label": "Ubuntu 24.04 — unattended install",
+                "description": "Wipes the disk. Do not point a rule at this without meaning it.",
+                "kernel": "{{boot}}/images/ubuntu-24.04/vmlinuz",
+                "initrd": [
+                    "{{boot}}/images/ubuntu-24.04/initrd"
+                ],
+                "cmdline": "ip=dhcp url={{boot}}/images/ubuntu-24.04/ubuntu.iso autoinstall ds=nocloud-net;s={{base}}/seed/{{mac-hyphenless}}/ cloud-config-url=/dev/null"
+            },
+            "arch-r630": {
+                "label": "Arch Linux on a ZFS mirror (R630) — unattended install",
+                "description": "WIPES both Kingston SSDs: LUKS2 + TPM2, ZFS mirror root, cephadm. Refuses to touch disks that already hold the install.",
+                "kernel": "{{boot}}/images/archlinux/arch/boot/x86_64/vmlinuz-linux",
+                "initrd": [
+                    "{{boot}}/images/archlinux/arch/boot/x86_64/initramfs-linux.img"
+                ],
+                "cmdline": "ip=dhcp BOOTIF=01-${netX/mac:hexhyp} archisobasedir=arch archiso_http_srv={{boot}}/images/archlinux/ cow_spacesize=8G script={{boot}}/images/archlinux/install-r630.sh console=ttyS1,115200n8 console=tty0"
+            },
+            "arch-r630-reinstall": {
+                "label": "Arch Linux on a ZFS mirror (R630) — REINSTALL, wipes the existing pool",
+                "kernel": "{{boot}}/images/archlinux/arch/boot/x86_64/vmlinuz-linux",
+                "initrd": [
+                    "{{boot}}/images/archlinux/arch/boot/x86_64/initramfs-linux.img"
+                ],
+                "cmdline": "ip=dhcp BOOTIF=01-${netX/mac:hexhyp} archisobasedir=arch archiso_http_srv={{boot}}/images/archlinux/ cow_spacesize=8G script={{boot}}/images/archlinux/install-r630.sh reinstall=yes console=ttyS1,115200n8 console=tty0"
+            },
+            "memtest": {
+                "label": "Memtest86+",
+                "kernel": "{{boot}}/images/memtest/memtest.efi"
+            },
+            "shell": {
+                "label": "iPXE shell",
+                "script": "#!ipxe\necho Dropping to a shell on {{mac}} ({{vendor}} {{product}})\necho This server is {{server}}\nshell\n"
+            }
+        },
+        "rule": [
+            {
+                "name": "never-touch-network-gear",
+                "description": "Switches, APs and routers are left entirely alone.",
+                "priority": 1000,
+                "profile": "hands-off",
+                "when": {
+                    "device_class": [
+                        "network"
+                    ]
+                }
+            },
+            {
+                "name": "held-machines-boot-their-disks",
+                "priority": 900,
+                "profile": "local",
+                "when": {
+                    "tag": [
+                        "hold"
+                    ]
+                }
+            },
+            {
+                "name": "r630-gets-arch-on-zfs",
+                "description": "Dell PowerEdge R630: Arch Linux, ZFS mirror on the Kingston SSDs, TPM-unlocked LUKS, cephadm.",
+                "priority": 200,
+                "profile": "arch-r630",
+                "tag": [
+                    "provisioned",
+                    "arch-zfs",
+                    "ceph"
+                ],
+                "when": {
+                    "product": [
+                        "PowerEdge R630*"
+                    ],
+                    "known": false
+                },
+                "unless": {
+                    "tag": [
+                        "no-install"
+                    ]
+                }
+            },
+            {
+                "name": "tag-virtual-machines",
+                "priority": 500,
+                "tag": [
+                    "virtual"
+                ],
+                "when": {
+                    "device_class": [
+                        "virtual"
+                    ]
+                }
+            },
+            {
+                "name": "tag-by-subnet",
+                "priority": 500,
+                "tag": [
+                    "lab"
+                ],
+                "when": {
+                    "subnet": [
+                        "10.20.0.0/16"
+                    ]
+                }
+            },
+            {
+                "name": "image-new-machines",
+                "description": "Anything that has never booted here gets provisioned.",
+                "priority": 100,
+                "profile": "ubuntu-2404",
+                "tag": [
+                    "provisioned"
+                ],
+                "when": {
+                    "known": false,
+                    "device_class": [
+                        "physical",
+                        "virtual"
+                    ]
+                },
+                "unless": {
+                    "tag": [
+                        "no-install"
+                    ]
+                }
+            },
+            {
+                "name": "reimage-overnight-only",
+                "priority": 90,
+                "profile": "ubuntu-2404",
+                "when": {
+                    "tag": [
+                        "reimage"
+                    ],
+                    "time_between": [
+                        "22:00",
+                        "06:00"
+                    ]
+                }
+            },
+            {
+                "name": "stop-reimaging-after-three-tries",
+                "priority": 80,
+                "profile": "menu",
+                "when": {
+                    "tag": [
+                        "reimage"
+                    ],
+                    "boots_at_least": 3
+                }
+            },
+            {
+                "name": "old-optiplexes-get-the-menu",
+                "priority": 50,
+                "profile": "menu",
+                "when": {
+                    "vendor": [
+                        "Dell"
+                    ],
+                    "product": [
+                        "OptiPlex 70*",
+                        "OptiPlex 30*"
+                    ]
+                }
+            },
+            {
+                "name": "everything-else-boots-its-disk",
+                "priority": -100,
+                "profile": "local"
+            }
+        ]
+    })
+}
+
+async fn with_fixture(app: Arc<Application>) -> Arc<Application> {
+    let store = app.resolve::<RuleStore>().expect("the policy store");
+    let document: PolicyDocument =
+        serde_json::from_value(fixture()).expect("the fixture is a policy document");
+    store
+        .replace(EditMeta::new("the test fixture", "test"), document)
+        .await
+        .expect("the fixture policy loads");
+    app
+}
+
 impl Server {
     async fn boot() -> Self {
         let app = {
@@ -33,7 +270,7 @@ impl Server {
             boot(Mode::Testing).await.expect("the server should boot")
         };
         Self {
-            app: TestApp::new(app).expect("a kernel"),
+            app: TestApp::new(with_fixture(app).await).expect("a kernel"),
         }
     }
 
@@ -88,7 +325,7 @@ async fn a_machine_with_no_query_is_sent_back_to_ask_again_properly() {
         .assert_contains("chain ");
 
     assert!(
-        response.text().contains("${net0/mac:hexhyp}"),
+        response.text().contains("${netX/mac:hexhyp}"),
         "the machine expands its own address: {}",
         response.text()
     );
@@ -637,7 +874,7 @@ async fn editable() -> Server {
             .expect("the server should boot")
     };
     Server {
-        app: TestApp::new(app).expect("a kernel"),
+        app: TestApp::new(with_fixture(app).await).expect("a kernel"),
     }
 }
 
@@ -677,10 +914,10 @@ async fn the_policy_comes_from_the_database_rule_by_rule() {
     assert_eq!(body["source"], "database");
     assert!(
         body["revision"].as_u64().is_some(),
-        "the seeded starter is revision one: {body}"
+        "the seeded starter, then the fixture, are revisions: {body}"
     );
     let rules = body["rules"].as_array().unwrap();
-    assert!(!rules.is_empty(), "the starter policy was seeded");
+    assert!(!rules.is_empty(), "the fixture policy was stored");
     assert!(!body["profiles"].as_array().unwrap().is_empty());
 
     // Each rule carries its condition tree and the same thing in words.
@@ -831,9 +1068,9 @@ async fn a_change_that_would_not_load_is_refused_and_the_running_policy_is_untou
 
     let refused = write(
         &server,
-        Method::PUT,
-        "/api/policy",
-        Some(serde_json::json!({ "text": "[[rule]]\nname = \"x\"\nprofile = \"no-such-profile\"\n" })),
+        Method::POST,
+        "/api/policy/rules",
+        Some(serde_json::json!({ "name": "x", "profile": "no-such-profile" })),
     )
     .await;
     refused.assert_status(StatusCode::BAD_REQUEST);
@@ -1078,27 +1315,34 @@ async fn the_wizard_can_save_and_forget_its_own_templates() {
 }
 
 #[tokio::test]
-async fn the_policy_exports_as_a_document_that_imports_back() {
+async fn the_policy_cannot_be_exported_to_or_imported_from_a_file() {
+    // The policy lives in the database and only there. A whole-document
+    // replace from text, or an export to download, would be a second copy
+    // that drifts — so neither is a route any more.
     use rainier_framework::http::Method;
     let server = editable().await;
-    let exported = server.app.get("/api/policy/export?format=json").await;
-    exported.assert_ok();
-    let document: serde_json::Value = serde_json::from_str(exported.text()).unwrap();
+    let before = policy(&server).await;
 
-    let toml = server.app.get("/api/policy/export?format=toml").await;
-    toml.assert_ok();
+    let exported = server.app.get("/api/policy/export?format=toml").await;
+    assert!(
+        !exported.status().is_success(),
+        "there is no export: {}",
+        exported.text()
+    );
 
-    // Importing what was exported changes nothing, so records no revision.
-    let response = write(
+    let replaced = write(
         &server,
         Method::PUT,
         "/api/policy",
-        Some(serde_json::json!({ "text": toml.text() })),
+        Some(serde_json::json!({ "text": "[profiles.a]\nkind = \"local\"\n" })),
     )
     .await;
-    response.assert_ok();
-    assert_eq!(response.json()["changed"], false, "{}", response.text());
-    assert_eq!(policy(&server).await["document"], document);
+    assert!(
+        !replaced.status().is_success(),
+        "there is no import: {}",
+        replaced.text()
+    );
+    assert_eq!(policy(&server).await["document"], before["document"]);
 }
 
 #[tokio::test]
@@ -1109,9 +1353,15 @@ async fn validating_a_document_changes_nothing_and_needs_no_token() {
 
     server
         .app
-        .post("/api/policy/validate", &serde_json::json!({
-            "text": "[profiles.a]\nkind = \"local\"\n\n[[rule]]\nname = \"r\"\nprofile = \"a\"\n"
-        }))
+        .post(
+            "/api/policy/validate",
+            &serde_json::json!({
+                "document": {
+                    "profiles": { "a": { "kind": "local" } },
+                    "rules": [ { "name": "r", "profile": "a" } ]
+                }
+            }),
+        )
         .await
         .assert_ok()
         .assert_json_path("ok", true);
@@ -1120,7 +1370,9 @@ async fn validating_a_document_changes_nothing_and_needs_no_token() {
         .app
         .post(
             "/api/policy/validate",
-            &serde_json::json!({ "text": "[[rule]]\nname = \"r\"\nprofile = \"gone\"\n" }),
+            &serde_json::json!({
+                "document": { "rules": [ { "name": "r", "profile": "gone" } ] }
+            }),
         )
         .await;
     bad.assert_ok().assert_json_path("ok", false);

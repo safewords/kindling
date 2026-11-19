@@ -1,16 +1,16 @@
-//! `pxe:rules` — read, check, import, export and roll back the boot policy.
+//! `pxe:rules` — read the boot policy, its history, and roll it back.
 //!
-//! The policy lives in the database and is normally edited in the web UI.
-//! This command is for everything around that: checking a file in a deploy
-//! pipeline before importing it, importing it, exporting the running policy
-//! for review or backup, and rolling back from a terminal when the web UI is
-//! the thing that is broken.
+//! The policy lives in the database. It is changed in the web UI, through the
+//! API, or with `pxe:rule`, `pxe:profile` and `pxe:policy`; this command shows
+//! what is in force and moves between revisions. There is deliberately no
+//! import or export: a policy kept in a file is a second copy that drifts, and
+//! the database's revisions are the history and the backup (`pxe:db:backup`
+//! copies the whole database).
 
 use rainier_framework::console_kernel::{exit, io, Arguments, Command};
 use rainier_framework::prelude::*;
 
-use crate::app::services::{RuleStore, STARTER_POLICY};
-use crate::pxe::rules::RuleSet;
+use crate::app::services::RuleStore;
 
 #[derive(Debug, Default)]
 pub struct RulesCommand;
@@ -29,70 +29,27 @@ impl Command for RulesCommand {
         Some(
             "Usage:\n  \
              pxe:rules                    Show the policy in force\n  \
-             pxe:rules --check=FILE       Validate a TOML or JSON policy file, changing nothing\n  \
-             pxe:rules --import=FILE      Replace the stored policy with a file's (kept as a revision)\n  \
-             pxe:rules --export[=toml]    Print the running policy as JSON, or TOML\n  \
              pxe:rules --history          List the stored revisions, newest first\n  \
              pxe:rules --restore=ID       Put revision ID back (itself a new revision)\n  \
-             pxe:rules --reload           Re-read the stored policy into the running server\n  \
-             pxe:rules --example          Print the starter policy\n\n\
-             `--check` is what a deploy pipeline runs: it exits non-zero and lists every\n\
-             problem at once, so a file with five mistakes is one fix rather than five.",
+             pxe:rules --reload           Re-read the stored policy into this process\n\n\
+             To change the policy: pxe:rule, pxe:profile, pxe:policy (or the web UI).\n\
+             A running pxe:serve picks a change up within a few seconds.",
         )
     }
 
     async fn handle(&self, args: &Arguments, app: &Application) -> Result<i32> {
-        if args.flag("example") {
-            println!("{STARTER_POLICY}");
-            return Ok(exit::SUCCESS);
-        }
-
-        if let Some(path) = args.option("check") {
-            return Ok(check(path));
+        for refused in ["import", "export", "check", "example"] {
+            if args.flag(refused) || args.option(refused).is_some() {
+                eprintln!(
+                    "`--{refused}` is gone: the boot policy is not kept in files. It lives in \
+                     the database; change it with pxe:rule, pxe:profile and pxe:policy, roll it \
+                     back with --restore, and back it up with pxe:db:backup."
+                );
+                return Ok(exit::FAILURE);
+            }
         }
 
         let store = app.resolve::<RuleStore>()?;
-
-        if let Some(path) = args.option("import") {
-            return Ok(
-                match store.import(std::path::Path::new(path), "console").await {
-                    Ok(applied) => {
-                        println!(
-                            "Imported `{path}`: {} rule(s), {} profile(s){}.",
-                            applied.rules.rules().len(),
-                            applied.rules.profiles().len(),
-                            applied
-                                .revision
-                                .map(|r| format!(", revision {}", r.id))
-                                .unwrap_or_else(|| " — identical to what was stored".into())
-                        );
-                        exit::SUCCESS
-                    }
-                    Err(e) => {
-                        eprintln!("{e}\n\nNothing changed; the stored policy is as it was.");
-                        exit::FAILURE
-                    }
-                },
-            );
-        }
-
-        if args.flag("export") || args.option("export").is_some() {
-            let document = store.current().to_document();
-            match args.option("export") {
-                Some("toml") => match document.to_toml() {
-                    Ok(text) => println!("{text}"),
-                    Err(e) => {
-                        eprintln!("the policy could not be written as TOML: {e}");
-                        return Ok(exit::FAILURE);
-                    }
-                },
-                _ => println!(
-                    "{}",
-                    serde_json::to_string_pretty(&document).unwrap_or_default()
-                ),
-            }
-            return Ok(exit::SUCCESS);
-        }
 
         if args.flag("history") {
             let Some(repository) = store.repository() else {
@@ -169,35 +126,6 @@ impl Command for RulesCommand {
     }
 }
 
-fn check(path: &str) -> i32 {
-    match RuleSet::load(path) {
-        Ok(rules) => {
-            println!(
-                "{path}: {} rule(s), {} profile(s). No problems.",
-                rules.rules().len(),
-                rules.profiles().len()
-            );
-
-            // Not a failure — a policy can legitimately be all tagging rules —
-            // but it is the single most common reason for "nothing boots", so
-            // it is said out loud.
-            if rules.settings().default_profile.is_none()
-                && !rules.rules().iter().any(|rule| rule.profile.is_some())
-            {
-                println!(
-                    "\nNote: nothing in this policy chooses a profile, so no machine would be \
-                     told to boot anything."
-                );
-            }
-            exit::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            exit::FAILURE
-        }
-    }
-}
-
 fn show(store: &RuleStore) {
     let rules = store.current();
 
@@ -271,7 +199,7 @@ fn show(store: &RuleStore) {
                     } else {
                         format!("{} (off)", rule.name)
                     },
-                    actions(rule),
+                    describe_actions(rule),
                     if rule.stops() {
                         "yes".into()
                     } else {
@@ -288,7 +216,7 @@ fn show(store: &RuleStore) {
 }
 
 /// What a rule does, in a table cell.
-fn actions(rule: &crate::pxe::rules::Rule) -> String {
+pub fn describe_actions(rule: &crate::pxe::rules::Rule) -> String {
     let mut does = Vec::new();
     if let Some(profile) = &rule.profile {
         does.push(format!("boot {profile}"));
@@ -314,39 +242,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_example_this_command_prints_is_a_policy_that_loads() {
-        // It is also what a new install is seeded with, so this asserts the
-        // default is valid as well.
-        let rules = RuleSet::parse(STARTER_POLICY).expect("the starter policy must be valid");
-        assert!(
-            !rules.rules().is_empty(),
-            "an example with no rules teaches nothing"
-        );
-        assert!(
-            rules.settings().default_profile.is_some(),
-            "and it should boot something"
-        );
-    }
-
-    #[test]
     fn the_summary_says_what_a_rule_does() {
-        let rules = RuleSet::parse(
-            r#"
-[profiles.a]
-kind = "local"
-
-[[rule]]
-name = "r"
-profile = "a"
-tag = ["x"]
-remove_tags = ["y"]
-set = { role = "db" }
-when = { vendor = ["Dell"], arch = ["x64-uefi"], known = false }
-"#,
-        )
+        let rules = crate::pxe::rules::RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "a": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "r",
+                    "profile": "a",
+                    "tag": [
+                        "x"
+                    ],
+                    "remove_tags": [
+                        "y"
+                    ],
+                    "set": {
+                        "role": "db"
+                    },
+                    "when": {
+                        "vendor": [
+                            "Dell"
+                        ],
+                        "arch": [
+                            "x64-uefi"
+                        ],
+                        "known": false
+                    }
+                }
+            ]
+        }))
         .unwrap();
 
-        assert_eq!(actions(&rules.rules()[0]), "boot a, +x, -y, role=db");
+        assert_eq!(
+            describe_actions(&rules.rules()[0]),
+            "boot a, +x, -y, role=db"
+        );
         let (when, _) = rules.describe("r").unwrap();
         assert!(
             when.contains("vendor") && when.contains("arch") && when.contains("known"),
@@ -356,9 +289,19 @@ when = { vendor = ["Dell"], arch = ["x64-uefi"], known = false }
 
     #[test]
     fn a_rule_with_no_conditions_says_so() {
-        let rules = RuleSet::parse(
-            "[profiles.a]\nkind = \"local\"\n\n[[rule]]\nname = \"r\"\nprofile = \"a\"\n",
-        )
+        let rules = crate::pxe::rules::RuleSet::from_json_value(serde_json::json!({
+            "profiles": {
+                "a": {
+                    "kind": "local"
+                }
+            },
+            "rule": [
+                {
+                    "name": "r",
+                    "profile": "a"
+                }
+            ]
+        }))
         .unwrap();
         assert_eq!(rules.describe("r").unwrap().0, "anything");
     }

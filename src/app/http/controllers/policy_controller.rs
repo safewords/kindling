@@ -120,14 +120,13 @@ pub async fn schema() -> Result<Response> {
     Ok(Response::json(&schema))
 }
 
-/// What the validate and preview endpoints take: a whole document, a TOML or
-/// JSON text, or one rule to try in place of another.
+/// What the validate and preview endpoints take: a whole document (JSON, as the
+/// editor holds it), or one rule to try in place of another. There is no text
+/// form: the policy is not kept in files.
 #[derive(Debug, Default, Deserialize)]
 pub struct Candidate {
     #[serde(default)]
     pub document: Option<PolicyDocument>,
-    #[serde(default)]
-    pub text: Option<String>,
     #[serde(default)]
     pub rule: Option<Rule>,
     /// The rule `rule` replaces, when editing rather than adding.
@@ -147,8 +146,6 @@ impl Candidate {
         let mut focus = None;
         let document = if let Some(document) = self.document {
             document
-        } else if let Some(text) = self.text {
-            PolicyDocument::from_text(&text)?
         } else {
             let mut document = current.to_document();
             if let Some(rule) = self.rule {
@@ -351,24 +348,6 @@ pub async fn render_profile(request: Req) -> Result<Response> {
     ))
 }
 
-/// `GET /api/policy/export?format=json|toml`
-pub async fn export(request: Req) -> Result<Response> {
-    let document = resolve::<RuleStore>()?.current().to_document();
-    let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-
-    Ok(match request.input("format").as_deref() {
-        Some("toml") => {
-            let text = document.to_toml().map_err(Error::internal)?;
-            Response::download(text.into_bytes(), &format!("pxe-policy-{stamp}.toml"))
-        }
-        _ => {
-            let text = serde_json::to_string_pretty(&document)
-                .map_err(|e| Error::internal(e.to_string()))?;
-            Response::download(text.into_bytes(), &format!("pxe-policy-{stamp}.json"))
-        }
-    })
-}
-
 /// `GET /api/policy/revisions`
 pub async fn revisions(request: Req) -> Result<Response> {
     let limit: u64 = request
@@ -404,29 +383,6 @@ pub async fn show_revision(request: Req) -> Result<Response> {
 // ---------------------------------------------------------------------------
 // Writing.
 // ---------------------------------------------------------------------------
-
-/// `PUT /api/policy` — replace the whole policy: from a document, or from a
-/// TOML or JSON text (an import).
-pub async fn replace(request: Req) -> Result<Response> {
-    let body: Candidate = request.json()?;
-
-    let (document, summary) = match (body.document, body.text) {
-        (Some(document), _) => (document, "the whole policy was replaced"),
-        (None, Some(text)) => (
-            PolicyDocument::from_text(&text).map_err(|e| edit_error(e.into()))?,
-            "a policy was imported",
-        ),
-        (None, None) => {
-            return Err(Error::bad_request(
-                "send a `document`, or a `text` to import",
-            ))
-        }
-    };
-    let meta = meta(&request, summary);
-
-    let store = resolve::<RuleStore>()?;
-    changed(store.replace(meta, document).await)
-}
 
 /// `POST /api/policy/rules` — add a rule.
 pub async fn add_rule(request: Req) -> Result<Response> {

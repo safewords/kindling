@@ -75,10 +75,6 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
         PXE_DESCRIPTION,
         env.string("PXE_DESCRIPTION", "kindling netboot"),
     )?;
-    config.set(
-        PXE_RULES_PATH,
-        env.string("PXE_RULES_PATH", "pxe-rules.toml"),
-    )?;
     config.set(PXE_TFTP_ROOT, env.string("PXE_TFTP_ROOT", "tftproot"))?;
     config.set(PXE_OUI_FILE, env.string("PXE_OUI_FILE", ""))?;
 
@@ -176,10 +172,6 @@ mod tests {
     #[test]
     fn the_defaults_produce_a_server_that_runs_with_no_env_file_at_all() {
         let config = configured("").unwrap();
-        assert_eq!(
-            config.get(PXE_RULES_PATH).as_deref(),
-            Some("pxe-rules.toml")
-        );
         assert_eq!(config.get(PXE_TFTP_ROOT).as_deref(), Some("tftproot"));
         assert_eq!(config.get(PXE_TFTP_PORT), Some(69));
         assert_eq!(config.get(PXE_DHCP_ENABLED), Some(true));

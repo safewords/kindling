@@ -16,7 +16,7 @@ const source = ref("");
 const checked = ref({ ok: false, problems: [], checking: false });
 let checkTimer = null;
 
-/** `.env` was written elsewhere while this screen held unsaved work. */
+/** `kindling.toml` was written elsewhere while this screen held unsaved work. */
 const stale = ref(false);
 
 /** `quiet` keeps what is on screen while it loads — for a refresh nobody asked for. */
@@ -136,7 +136,7 @@ async function saveSource() {
     <div class="rounded-lg border border-slate-700/60 bg-slate-900/50 px-4 py-3 text-sm text-slate-400">
       Configuration is read <b class="text-slate-200">once, at startup</b>. Saving here writes
       <code class="font-mono">{{ config.path }}</code>; the server picks it up when it next
-      starts. The policy file is the exception — that reloads on demand.
+      starts. Only service settings live here: the boot policy is in the database, on the Policy screen.
     </div>
 
     <!-- Somebody else changed the file while this screen had unsaved edits.
@@ -209,7 +209,7 @@ async function saveSource() {
           >
             <div>
               <label class="text-sm text-slate-200">{{ setting.label }}</label>
-              <code class="mt-0.5 block font-mono text-[11px] text-slate-600">{{ setting.key }}</code>
+              <code class="mt-0.5 block font-mono text-[11px] text-slate-600" :title="setting.key">{{ setting.path }}</code>
             </div>
 
             <div>
