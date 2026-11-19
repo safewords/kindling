@@ -65,7 +65,7 @@ export default defineConfig({
     emptyOutDir: true,
     // By name, so the manifest lands at `public/build/manifest.json`.
     manifest: "manifest.json",
-    rollupOptions: {
+    rolldownOptions: {
       // The closed set of `@vite` entries. An entry a template names that is
       // not listed here is a render-time error naming this file.
       input: ["resources/css/app.css", "resources/js/app.js"],
