@@ -67,6 +67,27 @@ Every rule, in order
   `pxe:profile`, `pxe:policy` — through the same validated, versioned path as
   the web UI. A running server picks a change up within seconds.
 
+## Run the published image
+
+CI publishes `ghcr.io/safewords/kindling` from every commit on `main` that
+passed fmt, clippy and the tests (`:latest`, `:main`, `:sha-<commit>`). It
+holds nothing about any network; everything is given at runtime:
+
+```sh
+docker run -d --name kindling --network host \
+  -v ./kindling.toml:/etc/kindling/kindling.toml:ro \
+  -v kindling-storage:/srv/kindling/storage \
+  -v ./tftproot:/srv/kindling/tftproot:ro \
+  ghcr.io/safewords/kindling:latest
+
+docker exec kindling pxe pxe:rule add …       # the policy, in the database
+docker exec kindling pxe pxe:doctor
+```
+
+Host networking because proxy DHCP and TFTP are broadcasts and well-known
+UDP ports. On Kubernetes, the same with `hostNetwork: true`, the settings file
+from a Secret, and `storage` on a volume.
+
 ## Quick start
 
 ```sh

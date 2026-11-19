@@ -1,0 +1,144 @@
+# fmt, clippy and the tests on every push and pull request; on main, the image
+# that passed them goes to ghcr.io/safewords/kindling.
+#
+# The three checks are required by the ruleset on `main`, so nothing reaches
+# it without them. GitHub-hosted runners, not the safewords fleet: this
+# repository is public, and its workflows can be triggered from forks.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.100.0
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --locked -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+      # The admin UI first: it ships in the image, a frontend that does not
+      # build is a failed test too, and a feature test checks that the shell
+      # page carries the built bundle.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund && npm run build
+      - run: cargo test --all-targets --locked
+
+  image:
+    name: image
+    needs: [fmt, clippy, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.title=kindling
+            org.opencontainers.image.description=A PXE boot server with a database-backed rule engine
+            org.opencontainers.image.licenses=MIT OR Apache-2.0
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          load: true
+          tags: kindling:ci
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Building proves it compiles; running proves it starts and answers.
+      # No settings at all on purpose: the defaults have to boot.
+      - name: The container serves
+        run: |
+          set -euo pipefail
+          docker run --detach --name kindling-ci --publish 8080:8080 \
+            --env APP_ENV=local --env PXE_DHCP_ENABLED=false --env PXE_TFTP_ENABLED=false \
+            kindling:ci
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:8080/api/health > /dev/null; then
+              echo "answered after ${attempt}s"
+              docker exec kindling-ci pxe pxe:rules
+              docker rm --force kindling-ci
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' kindling-ci)" != "true" ]; then
+              echo "::error::the container exited during boot"
+              break
+            fi
+            sleep 1
+          done
+          docker logs kindling-ci 2>&1 | tail -80 || true
+          docker rm --force kindling-ci || true
+          exit 1
+
+      - name: Login to ghcr.io
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha

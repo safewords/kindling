@@ -1,0 +1,11 @@
+target
+node_modules
+public/build
+public/hot
+storage
+tftproot
+.env
+.env.*
+kindling.toml
+.git
+.idea
