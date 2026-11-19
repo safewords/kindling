@@ -22,13 +22,13 @@ path = "src/main.rs"
 # The framework. `sea-orm-executor` gives the native SQLite/MySQL/Postgres
 # driver the inventory lives on. Pinned by git `rev`, so a build is the same
 # build until this line changes; both framework crates move together.
-rainier-framework = { git = "https://github.com/safewords/rainier-framework.git", rev = "4c1745d", features = [
+rainier-framework = { git = "https://github.com/safewords/rainier-framework.git", rev = "e5fb8f0", features = [
     "sea-orm-executor",
 ] }
 
 # `#[derive(Entity)]` expands to `::rainier_orm::…`, an absolute path, so the
 # crate defining a model needs the ORM as a direct dependency.
-rainier-orm = { git = "https://github.com/safewords/rainier-framework.git", rev = "4c1745d" }
+rainier-orm = { git = "https://github.com/safewords/rainier-framework.git", rev = "e5fb8f0" }
 
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
