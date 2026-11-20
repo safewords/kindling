@@ -30,6 +30,17 @@ config_keys! {
     pub PXE_TFTP_MAX_BLOCK_SIZE: u16 = "pxe.tftp.max_block_size";
     pub PXE_TFTP_MAX_WINDOW_SIZE: u16 = "pxe.tftp.max_window_size";
 
+    /// The read-only SMB share for Windows Setup. Off unless set; see
+    /// `pxe::smb`.
+    pub PXE_SMB_ENABLED: bool = "pxe.smb.enabled";
+    pub PXE_SMB_BIND: String = "pxe.smb.bind";
+    pub PXE_SMB_PORT: u16 = "pxe.smb.port";
+    /// The one account every share is read-only to. NTLMv2; no guest.
+    pub PXE_SMB_USER: String = "pxe.smb.user";
+    pub PXE_SMB_PASSWORD: String = "pxe.smb.password";
+    /// `name=dir, …`, each directory relative to the boot root.
+    pub PXE_SMB_SHARES: String = "pxe.smb.shares";
+
     /// The token that guards everything which changes state. Unset means the
     /// mutating endpoints refuse rather than run unguarded.
     pub PXE_API_TOKEN: String = "pxe.api_token";

@@ -115,7 +115,7 @@ impl Command for DoctorCommand {
     fn help(&self) -> Option<&str> {
         Some(
             "Usage:\n  pxe:doctor [--ports]\n\n\
-             Options:\n  --ports  Also try to bind 67, 69 and 4011\n\n\
+             Options:\n  --ports  Also try to bind 67, 69 and 4011 (and the SMB port, when on)\n\n\
              Exits non-zero if anything would stop a machine booting, so it can run\n\
              in a deploy pipeline. Warnings do not fail it.",
         )
@@ -390,6 +390,51 @@ impl Command for DoctorCommand {
             report.ok("the management API is guarded by a token", "");
         }
 
+        // --- the Windows install share ---------------------------------------
+        let smb = settings.get_or(PXE_SMB_ENABLED, false);
+        if smb {
+            match crate::pxe::smb::SmbSettings::new(
+                &settings.get_or(PXE_SMB_BIND, "0.0.0.0".to_string()),
+                settings.get_or(PXE_SMB_PORT, 445u16),
+                &settings.get_or(PXE_SMB_USER, "install".to_string()),
+                &settings.get_or(PXE_SMB_PASSWORD, String::new()),
+                &settings.get_or(PXE_SMB_SHARES, String::new()),
+            ) {
+                Err(why) => report.fail("the SMB share is configured wrong", why),
+                Ok(smb) => {
+                    for share in &smb.shares {
+                        let dir = root.join(&share.dir);
+                        if !dir.is_dir() {
+                            report.fail(
+                                format!("SMB share `{}` has no directory", share.name),
+                                format!(
+                                    "{} is not there. pxe:serve will not start until it is.",
+                                    dir.display()
+                                ),
+                            );
+                        } else if std::fs::read_dir(&dir)
+                            .map(|mut d| d.next().is_none())
+                            .unwrap_or(true)
+                        {
+                            report.warn(
+                                format!("SMB share `{}` is empty", share.name),
+                                format!(
+                                    "{} has nothing in it, or cannot be read. A machine that maps \
+                                     it will find no setup.exe.",
+                                    dir.display()
+                                ),
+                            );
+                        } else {
+                            report.ok(
+                                format!("SMB share `{}` serves {}", share.name, dir.display()),
+                                "",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // --- the ports ------------------------------------------------------
         if args.flag("ports") {
             let bind = settings.get_or(PXE_DHCP_BIND, "0.0.0.0".to_string());
@@ -408,6 +453,14 @@ impl Command for DoctorCommand {
                     &bind,
                     settings.get_or(PXE_TFTP_PORT, 69u16),
                     "TFTP",
+                );
+            }
+            if smb {
+                check_tcp_port(
+                    &mut report,
+                    &settings.get_or(PXE_SMB_BIND, "0.0.0.0".to_string()),
+                    settings.get_or(PXE_SMB_PORT, 445u16),
+                    "SMB",
                 );
             }
         }
@@ -474,6 +527,30 @@ fn check_port(report: &mut Report, bind: &str, port: u16, what: &str) {
         ),
         Err(e) => report.fail(
             format!("port {port} cannot be bound, for {what}"),
+            e.to_string(),
+        ),
+    }
+}
+
+/// [`check_port`] for TCP: SMB is the one listener here that is not UDP.
+fn check_tcp_port(report: &mut Report, bind: &str, port: u16, what: &str) {
+    let Ok(address) = bind.parse::<IpAddr>() else {
+        report.fail(format!("`{bind}` is not an address to bind"), "");
+        return;
+    };
+
+    match std::net::TcpListener::bind(SocketAddr::new(address, port)) {
+        Ok(_) => report.ok(format!("TCP port {port} is free, for {what}"), ""),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => report.fail(
+            format!("TCP port {port} needs privileges, for {what}"),
+            "Run as root, or grant CAP_NET_BIND_SERVICE.",
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => report.fail(
+            format!("TCP port {port} is already taken, for {what}"),
+            "A Samba, or the Windows file server, is probably already on it.",
+        ),
+        Err(e) => report.fail(
+            format!("TCP port {port} cannot be bound, for {what}"),
             e.to_string(),
         ),
     }

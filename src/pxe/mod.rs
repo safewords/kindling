@@ -9,4 +9,5 @@ pub mod pattern;
 pub mod policy;
 pub mod profile;
 pub mod rules;
+pub mod smb;
 pub mod tftp;

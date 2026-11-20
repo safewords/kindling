@@ -46,6 +46,19 @@
 # RFC 7440 windowing.
 #max_window_size = 16
 
+[smb]
+# A read-only SMB share for Windows Setup booted over the network: wimboot
+# starts Setup over HTTP, but Setup installs only from a disk or a share. Off
+# unless enabled. SMB 2/3, NTLMv2, every session signed; no guest, because
+# WinPE refuses guest logons. An empty password keeps it from starting.
+#enabled = false
+#bind = "0.0.0.0"
+#port = 445
+#user = "install"
+#password = ""
+# name=dir, comma-separated, each directory under [tftp] root.
+#shares = "win11=images/windows11/media"
+
 [loop_detection]
 # The backstop for iPXE that announces itself neither by option 77 nor 175.
 # Counted in whole DHCP transactions; below 2 turns it off.

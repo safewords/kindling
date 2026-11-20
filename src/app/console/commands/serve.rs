@@ -9,6 +9,11 @@
 //! configuration, because a network that already has a DHCP server with boot
 //! options, or a TFTP server, wants this one to stay out of the way. Off is a
 //! decision; failing to bind is not.
+//!
+//! The SMB share for Windows Setup (`pxe::smb`) is the other way round: off
+//! unless configured, and once configured, held to the same rule — a share
+//! that cannot bind 445 stops the server rather than leaving Setup to fail
+//! halfway through an install.
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -20,6 +25,7 @@ use rainier_framework::server::{Kernel, Server, ServerOptions};
 use crate::app::services::BootService;
 use crate::config::keys::*;
 use crate::pxe::dhcp::proxy::ProxyDhcpServer;
+use crate::pxe::smb::SmbSettings;
 use crate::pxe::tftp::server::{Limits, TftpServer};
 
 #[derive(Debug, Default)]
@@ -62,7 +68,32 @@ impl Command for ServeCommand {
         let http_base = service.settings().http_base.clone();
         let tftp_root = settings.get_or(PXE_TFTP_ROOT, "tftproot".to_string());
 
-        banner(&service, server_ip, &http_base, &tftp_root, dhcp, tftp);
+        // Checked before anything is bound: a share configured wrong is a
+        // message now, not a Setup that cannot find its media later.
+        let smb = if settings.get_or(PXE_SMB_ENABLED, false) {
+            Some(
+                SmbSettings::new(
+                    &settings.get_or(PXE_SMB_BIND, "0.0.0.0".to_string()),
+                    settings.get_or(PXE_SMB_PORT, 445u16),
+                    &settings.get_or(PXE_SMB_USER, "install".to_string()),
+                    &settings.get_or(PXE_SMB_PASSWORD, String::new()),
+                    &settings.get_or(PXE_SMB_SHARES, String::new()),
+                )
+                .map_err(Error::internal)?,
+            )
+        } else {
+            None
+        };
+
+        banner(
+            &service,
+            server_ip,
+            &http_base,
+            &tftp_root,
+            dhcp,
+            tftp,
+            smb.as_ref(),
+        );
 
         // Changes made from another process — `pxe:rule` and friends — reach
         // this one through the database. See `RuleStore::follow_database`.
@@ -144,6 +175,25 @@ impl Command for ServeCommand {
             }));
         }
 
+        if let Some(smb) = &smb {
+            let server = smb
+                .server(std::path::Path::new(&tftp_root))
+                .map_err(Error::internal)?;
+            server.bind().await.map_err(|e| {
+                Error::internal(format!(
+                    "SMB could not bind {}:{}: {e}. Is a Samba already on that port?",
+                    smb.bind, smb.port
+                ))
+            })?;
+
+            listeners.push(Box::pin(async move {
+                server
+                    .serve()
+                    .await
+                    .map_err(|e| Error::internal(format!("SMB stopped: {e}")))
+            }));
+        }
+
         // The HTTP kernel, the same one `serve` runs.
         let kernel = app.resolve::<Kernel>()?;
         let options = ServerOptions::default()
@@ -222,6 +272,7 @@ fn banner(
     tftp_root: &str,
     dhcp: bool,
     tftp: bool,
+    smb: Option<&SmbSettings>,
 ) {
     let rules = service.rules().current();
 
@@ -245,6 +296,22 @@ fn banner(
     );
     if tftp {
         println!("  autoexec.ipxe                  generated: chains to {http_base}/boot.ipxe");
+    }
+    match smb {
+        None => println!("  SMB                            off"),
+        Some(smb) => {
+            let shares: Vec<String> = smb
+                .shares
+                .iter()
+                .map(|share| format!("\\\\{server_ip}\\{} ({})", share.name, share.dir.display()))
+                .collect();
+            println!(
+                "  SMB                            on ({}), read-only to `{}`, signed: {}",
+                smb.port,
+                smb.user,
+                shares.join(", ")
+            );
+        }
     }
 
     if rules.rules().is_empty() && rules.settings().default_profile.is_none() {
