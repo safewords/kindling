@@ -219,8 +219,13 @@ fn rebased(request: &Request, relative: &str) -> Request {
         .method(request.method().clone())
         .uri(format!("/{}", relative.trim_start_matches('/')));
 
-    if let Some(tag) = request.header("if-none-match") {
-        builder = builder.header("if-none-match", tag);
+    // The headers that change what a file request answers: a conditional
+    // (304), and a range (206) — iPXE does not ask for ranges, but a person
+    // resuming a 600 MB download of an image does.
+    for name in ["if-none-match", "range", "if-range"] {
+        if let Some(value) = request.header(name) {
+            builder = builder.header(name, value);
+        }
     }
     builder.build()
 }
@@ -264,6 +269,26 @@ mod tests {
                 "`{field}` is free text and must be encoded: {script}"
             );
         }
+    }
+
+    #[test]
+    fn a_file_request_keeps_the_headers_that_change_its_answer() {
+        let asked = Request::builder()
+            .method(Method::GET)
+            .uri("/boot/images/disk.img")
+            .header("range", "bytes=100-")
+            .header("if-range", "\"a-b\"")
+            .header("if-none-match", "\"c-d\"")
+            .header("cookie", "not-forwarded=1")
+            .build();
+
+        let rebased = rebased(&asked, "/images/disk.img");
+
+        assert_eq!(rebased.path(), "/images/disk.img");
+        assert_eq!(rebased.header("range"), Some("bytes=100-"));
+        assert_eq!(rebased.header("if-range"), Some("\"a-b\""));
+        assert_eq!(rebased.header("if-none-match"), Some("\"c-d\""));
+        assert_eq!(rebased.header("cookie"), None);
     }
 
     #[test]
