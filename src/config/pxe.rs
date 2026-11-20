@@ -103,6 +103,18 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
         env.int("PXE_TFTP_MAX_WINDOW_SIZE", 16).clamp(1, 64) as u16,
     )?;
 
+    config.set(PXE_SMB_ENABLED, env.bool("PXE_SMB_ENABLED", false))?;
+    config.set(PXE_SMB_BIND, env.string("PXE_SMB_BIND", "0.0.0.0"))?;
+    config.set(
+        PXE_SMB_PORT,
+        env.int("PXE_SMB_PORT", 445).clamp(1, 65535) as u16,
+    )?;
+    config.set(PXE_SMB_USER, env.string("PXE_SMB_USER", "install"))?;
+    // Empty rather than invented, like the API token: an enabled share with no
+    // password refuses to start.
+    config.set(PXE_SMB_PASSWORD, env.string("PXE_SMB_PASSWORD", ""))?;
+    config.set(PXE_SMB_SHARES, env.string("PXE_SMB_SHARES", ""))?;
+
     // A loop is four whole DHCP transactions for one loader inside ninety
     // seconds. A lap is five to ten seconds, so four of them fit comfortably,
     // while a machine that is merely slow never gets there. `0` turns it off.
@@ -278,6 +290,14 @@ mod tests {
 
         let config = configured("PXE_TFTP_MAX_BLOCK_SIZE=0").unwrap();
         assert_eq!(config.get(PXE_TFTP_MAX_BLOCK_SIZE), Some(8));
+    }
+
+    #[test]
+    fn the_smb_share_is_off_and_has_no_password_until_one_is_set() {
+        let config = configured("").unwrap();
+        assert_eq!(config.get(PXE_SMB_ENABLED), Some(false));
+        assert_eq!(config.get(PXE_SMB_PORT), Some(445));
+        assert_eq!(config.get(PXE_SMB_PASSWORD).as_deref(), Some(""));
     }
 
     #[test]

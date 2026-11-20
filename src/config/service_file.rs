@@ -94,6 +94,12 @@ pub const KEYS: &[Key] = &[
     key("tftp.root", "PXE_TFTP_ROOT", Text),
     key("tftp.max_block_size", "PXE_TFTP_MAX_BLOCK_SIZE", Integer),
     key("tftp.max_window_size", "PXE_TFTP_MAX_WINDOW_SIZE", Integer),
+    key("smb.enabled", "PXE_SMB_ENABLED", Boolean),
+    key("smb.bind", "PXE_SMB_BIND", Text),
+    key("smb.port", "PXE_SMB_PORT", Integer),
+    key("smb.user", "PXE_SMB_USER", Text),
+    key("smb.password", "PXE_SMB_PASSWORD", Text),
+    key("smb.shares", "PXE_SMB_SHARES", Text),
     key("loop_detection.threshold", "PXE_LOOP_THRESHOLD", Integer),
     key(
         "loop_detection.window_secs",

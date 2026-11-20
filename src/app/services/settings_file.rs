@@ -172,6 +172,55 @@ pub const CATALOGUE: &[Spec] = &[
         "69",
         "Firmware has this number built in; changing it is for testing.",
     ),
+    // --- the Windows install share ------------------------------------------
+    spec(
+        "PXE_SMB_ENABLED",
+        "Windows install share",
+        "Serve SMB",
+        Kind::Boolean,
+        "false",
+        "A read-only SMB share for Windows Setup booted over the network: wimboot starts Setup \
+         over HTTP, but Setup installs only from a disk or an SMB share. Off unless you need it.",
+    ),
+    spec(
+        "PXE_SMB_PORT",
+        "Windows install share",
+        "SMB port",
+        Kind::Integer,
+        "445",
+        "Windows maps shares on 445 and nowhere else without extra options. It cannot be shared \
+         with a Samba on the same address.",
+    ),
+    spec(
+        "PXE_SMB_USER",
+        "Windows install share",
+        "Account",
+        Kind::Text,
+        "install",
+        "The one account every share is read-only to, used as `net use … /user:install`. \
+         NTLMv2 and signed: WinPE refuses guest logons, so there is no guest share.",
+    ),
+    Spec {
+        key: "PXE_SMB_PASSWORD",
+        section: "Windows install share",
+        label: "Password",
+        kind: Kind::Secret,
+        default: "(unset: the share does not start)",
+        help: "The account's password. It also has to be in the script that maps the share, \
+               which machines fetch over HTTP, so treat it as known to the boot network and \
+               give it nothing but read access to install media — which is all it has.",
+        choices: None,
+    },
+    spec(
+        "PXE_SMB_SHARES",
+        "Windows install share",
+        "Shares",
+        Kind::Text,
+        "(none)",
+        "`name=dir`, comma-separated, each directory under the boot root: \
+         `win11=images/windows11/media` is mapped as \\\\server\\win11. A path with `..` \
+         or one outside the root is refused.",
+    ),
     // --- files -------------------------------------------------------------
     spec(
         "PXE_TFTP_ROOT",

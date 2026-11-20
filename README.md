@@ -45,7 +45,10 @@ Every rule, in order
   negotiation — the difference between a 300MB image taking two minutes and
   taking twenty.
 - **HTTP**: iPXE scripts generated per machine, the same boot directory served
-  over both protocols, a JSON API and a small admin interface.
+  over both protocols, a JSON API and a small admin interface. Images stream
+  from disk, and a download can resume.
+- **SMB** (port 445), optional and read-only, so a network-booted Windows Setup
+  has somewhere to install from — see [Installing Windows](#installing-windows).
 - **A rule engine** whose conditions are trees — `all`, `any` and `not` groups
   of tests over some two dozen facts: hardware address, OUI, vendor, device
   class, architecture, firmware, DHCP vendor and user class, hostname, UUID,
@@ -263,6 +266,54 @@ without the Rust app. Building never touches the loaders in service — output
 goes to `tftproot/ipxe-build/`, where one machine can try it before
 `--install` gives it to all of them. The details, and the reasons, are in
 [`ipxe/README.md`](ipxe/README.md).
+
+## Installing Windows
+
+Windows Setup can boot over the network, through
+[wimboot](https://ipxe.org/wimboot), but it will only *install* from a disk or
+an SMB share: `install.wim` is several gigabytes, and there is no way to hand
+it over in RAM. kindling can serve that share itself.
+
+1. Put the media under the boot root: the ISO's contents (or the ISO
+   loop-mounted) at, say, `tftproot/images/windows11/media/`, and wimboot,
+   `bootmgr`, `bootmgr.efi`, `boot/bcd`, `boot/boot.sdi` and `sources/boot.wim`
+   beside it in `images/windows11/`.
+2. Turn the share on in `kindling.toml`:
+
+   ```toml
+   [smb]
+   enabled = true
+   password = "…"                       # openssl rand -hex 12
+   shares = "win11=images/windows11/media"
+   ```
+
+3. Inject a `winpeshl.ini` and an `install.bat` that maps the share and runs
+   Setup from it:
+
+   ```bat
+   wpeinit
+   net use W: \\<server ip>\win11 /user:install <password>
+   W:\setup.exe
+   ```
+
+4. A `script` profile that boots it, and a rule that chooses it:
+
+   ```
+   #!ipxe
+   kernel {{boot}}/images/windows11/wimboot
+   initrd {{boot}}/images/windows11/winpeshl.ini winpeshl.ini
+   initrd {{boot}}/images/windows11/install.bat install.bat
+   initrd {{boot}}/images/windows11/bootmgr.efi bootmgr.efi
+   initrd {{boot}}/images/windows11/BCD BCD
+   initrd {{boot}}/images/windows11/boot.sdi boot.sdi
+   initrd {{boot}}/images/windows11/boot.wim boot.wim
+   boot
+   ```
+
+The share is read-only to its one account, every session is signed, and a
+share's directory must be inside the boot root. Windows installs in the
+firmware mode it booted in: boot it UEFI for a UEFI install. `pxe:doctor`
+checks the share's directories, and `--ports` whether 445 is free.
 
 ## The admin interface
 
@@ -532,6 +583,13 @@ once, so a mistake saved mid-rollout cannot leave a rack with no policy.
   authentication of any kind; a writable TFTP server on a boot network is a way
   for anything on that network to replace the loader every machine is about to
   execute.
+- **The SMB share has an account, not a guest.** Its password has to be in
+  the script WinPE runs, which a machine fetches over HTTP, so it is known to
+  the boot network — and it opens nothing but read access to install media.
+  A guest share would be the same exposure without the excuse: WinPE refuses
+  guest logons anyway. The protocol is the
+  [`smb-server`](https://crates.io/crates/smb-server) crate's; kindling
+  decides what is shared and that nothing can be written.
 - **`kind = "ignore"` is a real answer.** On a network with another boot server
   on it, saying nothing is the correct thing to say.
 - **Architecture and loop bugs are server-side, so they are fixed server-side.**

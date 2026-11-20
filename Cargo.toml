@@ -57,6 +57,13 @@ regex = "1"
 toml = "1.2"
 toml_edit = "0.25"
 
+# The optional read-only SMB share (`pxe::smb`): Windows Setup booted over the
+# network installs from SMB, and nothing else it can read is big enough to hold
+# install.wim. SMB 2/3 with NTLMv2 and signing; built on RustCrypto. Only the
+# local filesystem backend, which confines every open to the share with
+# `cap-std`.
+smb-server = { version = "0.12.1", default-features = false, features = ["localfs"] }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
 
