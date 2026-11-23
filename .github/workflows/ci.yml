@@ -2,8 +2,11 @@
 # that passed them goes to ghcr.io/safewords/kindling.
 #
 # The three checks are required by the ruleset on `main`, so nothing reaches
-# it without them. GitHub-hosted runners, not the safewords fleet: this
-# repository is public, and its workflows can be triggered from forks.
+# it without them.
+#
+# Public repository, on the safewords-runners fleet since 2026-11-23. Outside
+# code cannot reach the fleet: pull requests are collaborators-only and a fork's
+# runs need approval for every external contributor (both repository settings).
 name: ci
 
 on:
@@ -26,7 +29,7 @@ concurrency:
 jobs:
   fmt:
     name: fmt
-    runs-on: ubuntu-latest
+    runs-on: safewords-runners
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
@@ -37,7 +40,7 @@ jobs:
 
   clippy:
     name: clippy
-    runs-on: ubuntu-latest
+    runs-on: safewords-runners
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
@@ -49,7 +52,7 @@ jobs:
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: safewords-runners
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
@@ -69,7 +72,7 @@ jobs:
   image:
     name: image
     needs: [fmt, clippy, test]
-    runs-on: ubuntu-latest
+    runs-on: safewords-runners
     permissions:
       contents: read
       packages: write
