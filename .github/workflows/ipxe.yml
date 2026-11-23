@@ -30,7 +30,7 @@ permissions:
 jobs:
   build:
     name: ${{ matrix.arch }}
-    runs-on: ubuntu-24.04
+    runs-on: safewords-runners
     strategy:
       # One architecture failing says nothing about the others, and the
       # others' artifacts are still worth having.

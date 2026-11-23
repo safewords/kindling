@@ -26,7 +26,7 @@ concurrency:
 jobs:
   fmt:
     name: fmt
-    runs-on: ubuntu-latest
+    runs-on: safewords-runners
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
@@ -37,7 +37,7 @@ jobs:
 
   clippy:
     name: clippy
-    runs-on: ubuntu-latest
+    runs-on: safewords-runners
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
@@ -49,7 +49,7 @@ jobs:
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: safewords-runners
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
@@ -69,7 +69,7 @@ jobs:
   image:
     name: image
     needs: [fmt, clippy, test]
-    runs-on: ubuntu-latest
+    runs-on: safewords-runners
     permissions:
       contents: read
       packages: write
